@@ -173,4 +173,223 @@ window.addEventListener("message", (event) => {
     console.log("AVTT previous initiative:", rows[prevIndex].getAttribute("data-name"));
     return;
   }
+
+  if (cmd.command === "rollSelectedAbility") {
+    (async () => {
+      try {
+        const ability = (cmd.ability || "str").toLowerCase();
+        const statMap = { str: 1, dex: 2, con: 3, int: 4, wis: 5, cha: 6 };
+
+        const tokenId = CURRENTLY_SELECTED_TOKENS?.[0];
+        const token = TOKEN_OBJECTS?.[tokenId];
+
+        if (!token) {
+          console.warn("rollSelectedAbility: no selected token");
+          return;
+        }
+
+        const monsterId = token.options.monster || token.options.stat || token.options.itemId;
+        let monster = cached_monster_items?.[monsterId]?.monsterData;
+
+        if (!monster) {
+          console.log("rollSelectedAbility: loading monster stat", monsterId);
+          open_selected_token_stat?.();
+          await new Promise(resolve => setTimeout(resolve, 2500));
+          monster = cached_monster_items?.[monsterId]?.monsterData;
+        }
+
+        if (!monster) {
+          console.warn("rollSelectedAbility: no monster data found after loading", monsterId);
+          return;
+        }
+
+        const score = monster.stats?.find(s => s.statId === statMap[ability])?.value;
+
+        if (typeof score !== "number") {
+          console.warn("rollSelectedAbility: no score found", ability);
+          return;
+        }
+
+        const mod = Math.floor((score - 10) / 2);
+        const sign = mod >= 0 ? `+${mod}` : `${mod}`;
+
+        window.postMessage({
+          type: "AVTT_BRIDGE_ROLL",
+          roll: {
+            expression: `1d20${sign}`,
+            rollType: "check",
+            action: `${monster.name} ${ability.toUpperCase()} Check`
+          }
+        }, "*");
+
+        console.log(`rollSelectedAbility: ${monster.name} ${ability.toUpperCase()} ${score} (${sign})`);
+      } catch (err) {
+        console.error("rollSelectedAbility error:", err);
+      }
+    })();
+
+    return;
+  }
+
+  if (cmd.command === "rollSelectedFormula") {
+    (async () => {
+      try {
+        const formula = cmd.formula || "1d20 + {str}";
+        const label = cmd.label || "Selected Token Roll";
+
+        const statMap = { str: 1, dex: 2, con: 3, int: 4, wis: 5, cha: 6 };
+
+        const tokenId = CURRENTLY_SELECTED_TOKENS?.[0];
+        const token = TOKEN_OBJECTS?.[tokenId];
+
+        if (!token) {
+          console.warn("rollSelectedFormula: no selected token");
+          return;
+        }
+
+        const monsterId = token.options.monster || token.options.stat || token.options.itemId;
+        let monster = cached_monster_items?.[monsterId]?.monsterData;
+
+        if (!monster) {
+          console.log("rollSelectedFormula: loading monster stat", monsterId);
+          open_selected_token_stat?.();
+
+          await new Promise(resolve => setTimeout(resolve, 2500));
+
+          monster = cached_monster_items?.[monsterId]?.monsterData;
+        }
+
+        if (!monster) {
+          console.warn("rollSelectedFormula: no monster data found after loading", monsterId);
+          return;
+        }
+
+        const getScore = (ability) =>
+          monster.stats?.find(s => s.statId === statMap[ability])?.value;
+
+        const getMod = (ability) => {
+          const score = getScore(ability);
+          if (typeof score !== "number") return 0;
+          return Math.floor((score - 10) / 2);
+        };
+
+        const mods = {
+          str: getMod("str"),
+          dex: getMod("dex"),
+          con: getMod("con"),
+          int: getMod("int"),
+          wis: getMod("wis"),
+          cha: getMod("cha")
+        };
+
+        let expression = formula;
+
+        Object.entries(mods).forEach(([key, value]) => {
+          expression = expression.replaceAll(`{${key}}`, value >= 0 ? `+${value}` : `${value}`);
+        });
+
+        expression = expression
+          .replace(/\s+/g, "")
+          .replace(/\+\+/g, "+")
+          .replace(/\+-/g, "-");
+
+        const roll = {
+          expression,
+          rollType: cmd.rollType || "check",
+          action: label
+        };
+
+        console.log("rollSelectedFormula sending roll:", {
+          token: monster.name,
+          formula,
+          expression,
+          label
+        });
+
+        window.postMessage({
+          type: "AVTT_BRIDGE_ROLL",
+          roll
+        }, "*");
+          } catch (err) {
+        console.error("rollSelectedFormula error:", err);
+      }
+    })();
+
+    return;
+  }
+
+  if (cmd.command === "rollSelectedAction") {
+    (async () => {
+      try {
+        const actionName = cmd.action;
+        const part = cmd.part || "attack"; // attack, damage, all
+
+        const tokenId = CURRENTLY_SELECTED_TOKENS?.[0];
+        const token = TOKEN_OBJECTS?.[tokenId];
+
+        if (!token) {
+          console.warn("rollSelectedAction: no selected token");
+          return;
+        }
+
+        const monsterId = token.options.monster || token.options.stat || token.options.itemId;
+        let monster = cached_monster_items?.[monsterId]?.monsterData;
+
+        if (!monster) {
+          console.log("rollSelectedAction: loading monster stat", monsterId);
+          open_selected_token_stat?.();
+          await new Promise(resolve => setTimeout(resolve, 2500));
+          monster = cached_monster_items?.[monsterId]?.monsterData;
+        }
+
+        if (!monster) {
+          console.warn("rollSelectedAction: no monster data found", monsterId);
+          return;
+        }
+
+        const rolls = [...new DOMParser()
+          .parseFromString(monster.actionsDescription || "", "text/html")
+          .querySelectorAll("[data-dicenotation]")]
+          .map(el => ({
+            name: el.getAttribute("data-rollaction"),
+            expression: el.getAttribute("data-dicenotation"),
+            rollType: el.getAttribute("data-rolltype"),
+            damageType: el.getAttribute("data-rolldamagetype")
+          }))
+          .filter(r => !actionName || r.name === actionName)
+          .filter(r => {
+            if (part === "all") return true;
+            if (part === "attack") return r.rollType === "to hit";
+            if (part === "damage") return r.rollType === "damage";
+            return true;
+          });
+
+        if (!rolls.length) {
+          console.warn("rollSelectedAction: no matching rolls", { actionName, part });
+          return;
+        }
+
+        rolls.forEach((r, i) => {
+          setTimeout(() => {
+            window.postMessage({
+              type: "AVTT_BRIDGE_ROLL",
+              roll: {
+                expression: r.expression,
+                rollType: r.rollType,
+                action: `${monster.name} ${r.name}`,
+                damageType: r.damageType || undefined
+              }
+            }, "*");
+          }, i * 500);
+        });
+
+        console.log("rollSelectedAction:", monster.name, actionName, part, rolls);
+      } catch (err) {
+        console.error("rollSelectedAction error:", err);
+      }
+    })();
+
+    return;
+  }
+
 });
