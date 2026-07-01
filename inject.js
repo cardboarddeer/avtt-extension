@@ -3,6 +3,7 @@ console.log("AVTT inject loaded");
 window.AVTTBridge = {
   token: null,
   monster: null,
+  pc: null,
   actionRolls: [],
   actionNames: [],
 
@@ -11,10 +12,20 @@ window.AVTTBridge = {
     this.token = TOKEN_OBJECTS?.[tokenId] || null;
 
     this.monster = null;
+    this.pc = null;
     this.actionRolls = [];
     this.actionNames = [];
 
     if (!this.token) return false;
+
+    if (this.token.options?.itemType === "pc") {
+      const characterId = this.token.options.characterId;
+      this.pc = window.pcs?.find(p => p.characterId === characterId) || null;
+
+      if (this.pc) {
+        return true;
+      }
+    }
 
     const monsterId =
       this.token.options.monster ||
@@ -51,6 +62,10 @@ window.AVTTBridge = {
   },
 
   getAbilityModifier(ability) {
+    if (this.pc) {
+      return this.pc.abilities?.find(a => a.name === ability)?.modifier ?? 0;
+    }
+
     const statMap = {
       str: 1,
       dex: 2,
@@ -70,11 +85,19 @@ window.AVTTBridge = {
   },
 
   getAbilityScore(ability) {
+    if (this.pc) {
+      return this.pc.abilities?.find(a => a.name === ability)?.score ?? null;
+    }
+
     const statMap = { str: 1, dex: 2, con: 3, int: 4, wis: 5, cha: 6 };
     return this.monster?.stats?.find(s => s.statId === statMap[ability])?.value ?? null;
   },
 
   getProficiencyBonus() {
+    if (this.pc && typeof this.pc.proficiencyBonus === "number") {
+      return this.pc.proficiencyBonus;
+    }
+
     if (typeof this.monster?.proficiencyBonus === "number") {
       return this.monster.proficiencyBonus;
     }
@@ -91,6 +114,11 @@ window.AVTTBridge = {
   },
 
   getSavingThrowBonus(ability) {
+    if (this.pc) {
+      return this.pc.abilities?.find(a => a.name === ability)?.save
+        ?? this.getAbilityModifier(ability);
+    }
+
     const statMap = { str: 1, dex: 2, con: 3, int: 4, wis: 5, cha: 6 };
     const statId = statMap[ability];
 
@@ -119,6 +147,16 @@ window.AVTTBridge = {
 
   getSkillBonus(skill) {
     const clean = String(skill).toLowerCase().replace(/[^a-z]/g, "");
+
+    if (this.pc) {
+      const entry = this.pc.skills?.find(s =>
+        String(s.name || "").toLowerCase().replace(/[^a-z]/g, "") === clean
+      );
+
+      if (entry && typeof entry.modifier === "number") {
+        return entry.modifier;
+      }
+    }
 
     const skillIdMap = {
       acrobatics: 1,
@@ -180,6 +218,46 @@ window.AVTTBridge = {
 
       const found = candidates.find(v => typeof v === "number");
       if (typeof found === "number") return found;
+    }
+
+    // Monster fallback: parse DDB skillsHtml, e.g. "Stealth +3, Perception +2"
+    if (this.monster?.skillsHtml) {
+      const htmlText = new DOMParser()
+        .parseFromString(this.monster.skillsHtml, "text/html")
+        .body
+        .textContent || "";
+
+      const skillDisplayMap = {
+        acrobatics: "Acrobatics",
+        animalhandling: "Animal Handling",
+        arcana: "Arcana",
+        athletics: "Athletics",
+        deception: "Deception",
+        history: "History",
+        insight: "Insight",
+        intimidation: "Intimidation",
+        investigation: "Investigation",
+        medicine: "Medicine",
+        nature: "Nature",
+        perception: "Perception",
+        performance: "Performance",
+        persuasion: "Persuasion",
+        religion: "Religion",
+        sleightofhand: "Sleight of Hand",
+        stealth: "Stealth",
+        survival: "Survival"
+      };
+
+      const displayName = skillDisplayMap[clean];
+
+      if (displayName) {
+        const escaped = displayName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const match = htmlText.match(new RegExp(`${escaped}\\s*([+-]\\d+)`, "i"));
+
+        if (match) {
+          return Number(match[1]);
+        }
+      }
     }
 
     return this.getAbilityModifier(skillAbilityMap[clean] || "dex");
@@ -249,9 +327,109 @@ window.AVTTBridge = {
       .replace(/\+-/g, "-");
   },
 
+  getDisplayName() {
+    return this.pc?.name ||
+      this.monster?.name ||
+      this.token?.options?.name ||
+      "Selected Token";
+  },
+
+  getLabelValues() {
+    return {
+      name: this.getDisplayName(),
+      pb: this.getProficiencyBonus(),
+      str: this.getAbilityModifier("str"),
+      dex: this.getAbilityModifier("dex"),
+      con: this.getAbilityModifier("con"),
+      int: this.getAbilityModifier("int"),
+      wis: this.getAbilityModifier("wis"),
+      cha: this.getAbilityModifier("cha"),
+      level: this.pc?.level ?? "",
+      ac: this.token?.options?.armorClass ?? this.pc?.armorClass ?? this.monster?.armorClass ?? "",
+      hp: this.token?.options?.hitPointInfo?.current ?? this.pc?.hitPointInfo?.current ?? "",
+      maxHp: this.token?.options?.hitPointInfo?.maximum ?? this.pc?.hitPointInfo?.maximum ?? ""
+    };
+  },
+
   resolveLabel(label) {
-    return String(label || "")
-      .replaceAll("{name}", this.monster?.name || this.token?.options?.name || "Selected Token");
+    let output = String(label || "{name} Roll");
+
+    Object.entries(this.getLabelValues()).forEach(([key, value]) => {
+      output = output.replaceAll(`{${key}}`, String(value));
+    });
+
+    return output;
+  },
+
+  debug() {
+    const abilities = ["str", "dex", "con", "int", "wis", "cha"];
+
+    const skills = [
+      "acrobatics",
+      "animalhandling",
+      "arcana",
+      "athletics",
+      "deception",
+      "history",
+      "insight",
+      "intimidation",
+      "investigation",
+      "medicine",
+      "nature",
+      "perception",
+      "performance",
+      "persuasion",
+      "religion",
+      "sleightofhand",
+      "stealth",
+      "survival"
+    ];
+
+    const skillLabels = {
+      animalhandling: "animalHandling",
+      sleightofhand: "sleightOfHand"
+    };
+
+    const snapshot = {
+      type: this.pc ? "PC" : this.monster ? "Monster" : "Unknown",
+      name: this.getDisplayName?.() || this.token?.options?.name || "Selected Token",
+
+      abilities: Object.fromEntries(
+        abilities.map(a => [a, this.getAbilityModifier(a)])
+      ),
+
+      abilityScores: Object.fromEntries(
+        abilities.map(a => [a, this.getAbilityScore(a)])
+      ),
+
+      saves: Object.fromEntries(
+        abilities.map(a => [a, this.getSavingThrowBonus(a)])
+      ),
+
+      skills: Object.fromEntries(
+        skills.map(s => [skillLabels[s] || s, this.getSkillBonus(s)])
+      ),
+
+      pb: this.getProficiencyBonus(),
+      level: this.pc?.level ?? null,
+
+      ac: this.token?.options?.armorClass ?? this.pc?.armorClass ?? this.monster?.armorClass ?? null,
+      hp: this.token?.options?.hitPointInfo?.current ?? this.pc?.hitPointInfo?.current ?? null,
+      maxHp: this.token?.options?.hitPointInfo?.maximum ?? this.pc?.hitPointInfo?.maximum ?? null,
+
+      initiative: this.pc?.initiativeBonus ?? this.monster?.initiativeBonus ?? this.getAbilityModifier("dex"),
+
+      actions: this.actionNames,
+
+      raw: {
+        tokenOptions: this.token?.options,
+        pc: this.pc,
+        monster: this.monster
+      }
+    };
+
+    console.log("AVTTBridge debug snapshot:", snapshot);
+    return snapshot;
   },
 
   getTokenInfo() {
