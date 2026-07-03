@@ -1,4 +1,79 @@
 
+function avttCustomConditionToFilename(name) {
+  return String(name || "")
+    .trim()
+    .toLowerCase()
+    .replace(/['’]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "") + ".png";
+}
+
+function applyCustomConditionIcons() {
+  const extensionId = document.documentElement.getAttribute("data-avtt-extension-id");
+  if (!extensionId) return;
+
+  document.querySelectorAll("img.condition-img.custom-condition").forEach(img => {
+    const title = img.getAttribute("title");
+    if (!title) return;
+
+    const filename = avttCustomConditionToFilename(title);
+    const customUrl = `chrome-extension://${extensionId}/assets/conditons/${filename}`;
+
+    if (img.src !== customUrl) {
+      img.src = customUrl;
+    }
+  });
+}
+
+setInterval(applyCustomConditionIcons, 500);
+
+new MutationObserver(applyCustomConditionIcons).observe(document.documentElement, {
+  childList: true,
+  subtree: true
+});
+
+
+
+function avttSlugifyConditionName(name) {
+  return String(name || "")
+    .trim()
+    .toLowerCase()
+    .replace(/['’]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function injectCustomConditionIcon(conditionName) {
+  const slug = avttSlugifyConditionName(conditionName);
+  if (!slug) return;
+
+  const styleId = `avtt-custom-condition-icon-${slug}`;
+  if (document.getElementById(styleId)) return;
+
+  const extensionId = document.documentElement.getAttribute("data-avtt-extension-id");
+  if (!extensionId) {
+    console.warn("Custom condition icon: missing extension id");
+    return;
+  }
+
+  const iconUrl = `chrome-extension://${extensionId}/icons/conditions/${slug}.svg`;
+
+  const style = document.createElement("style");
+  style.id = styleId;
+  style.textContent = `
+    .icon-${slug}:before,
+    .context-menu-icon-${slug}:before {
+      content: url("${iconUrl}") !important;
+    }
+  `;
+
+  document.documentElement.appendChild(style);
+}
+
+injectCustomConditionIcon("Hunters Mark");
+
+
+
 
 window.AVTTBridge = {
   token: null,

@@ -3,7 +3,9 @@
   "name": "AVTT Bridge",
   "version": "1.0",
   "description": "Connect AboveVTT to localhost",
-  "permissions": ["tabs"],
+  "permissions": [
+    "tabs"
+  ],
   "host_permissions": [
     "http://localhost:3000/*",
     "*://*.dndbeyond.com/*"
@@ -13,14 +15,23 @@
   },
   "content_scripts": [
     {
-      "matches": ["*://*.dndbeyond.com/*"],
-      "js": ["content.js"]
+      "matches": [
+        "*://*.dndbeyond.com/*"
+      ],
+      "js": [
+        "content.js"
+      ]
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["inject.js"],
-      "matches": ["*://*.dndbeyond.com/*"]
+      "resources": [
+        "inject.js",
+        "assets/conditons/*.png"
+      ],
+      "matches": [
+        "*://*.dndbeyond.com/*"
+      ]
     }
   ]
 }
