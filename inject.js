@@ -411,6 +411,33 @@ window.addEventListener("message", (event) => {
     return;
   }
 
+  if (cmd.command === "toggleCondition") {
+    const condition = String(cmd.condition || "prone").toLowerCase();
+
+    CURRENTLY_SELECTED_TOKENS.forEach(id => {
+      const token = window.TOKEN_OBJECTS[id];
+      if (!token) return;
+
+      const nativeConditions = token.options.conditions || [];
+
+      const hasCondition = nativeConditions.some(c => {
+        const name = typeof c === "string" ? c : c.name;
+        return String(name || "").toLowerCase() === condition;
+      });
+
+      if (hasCondition) {
+        token.removeCondition(condition);
+      } else {
+        token.addCondition(condition);
+      }
+
+      token.place_sync_persist();
+    });
+
+    console.log("toggleCondition:", condition);
+    return;
+  }
+
   if (cmd.command === "toggleMarker") {
     const color = cmd.color || "#ff0000";
     const text = cmd.text || "Marked";
