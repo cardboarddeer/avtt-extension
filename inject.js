@@ -486,13 +486,19 @@ window.addEventListener("message", (event) => {
       if (!token) return;
 
       const nativeConditions = token.options.conditions || [];
+      const customConditions = token.options.custom_conditions || [];
 
-      const hasCondition = nativeConditions.some(c => {
+      const hasNativeCondition = nativeConditions.some(c => {
         const name = typeof c === "string" ? c : c.name;
         return String(name || "").toLowerCase() === condition.toLowerCase();
       });
 
-      if (hasCondition) {
+      const hasCustomCondition = customConditions.some(c => {
+        const name = typeof c === "string" ? c : c.name || c.text;
+        return String(name || "").toLowerCase() === condition.toLowerCase();
+      });
+
+      if (hasNativeCondition || hasCustomCondition) {
         token.removeCondition(condition);
       } else {
         token.addCondition(condition);
