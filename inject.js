@@ -1,4 +1,34 @@
 
+const AVTT_BUILT_IN_CONDITIONS = new Set([
+  "Blinded",
+  "Charmed",
+  "Deafened",
+  "Exhaustion",
+  "Frightened",
+  "Grappled",
+  "Incapacitated",
+  "Invisible",
+  "Paralyzed",
+  "Petrified",
+  "Poisoned",
+  "Prone",
+  "Restrained",
+  "Stunned",
+  "Unconscious",
+  "Concentration(Reminder)",
+  "Reaction Used",
+  "Flying",
+  "Burning",
+  "Rage",
+  "Blessed",
+  "Baned",
+  "Bloodied",
+  "Advantage",
+  "Disadvantage",
+  "Bardic Inspiration",
+  "Hasted"
+]);
+
 function avttCustomConditionToFilename(name) {
   return String(name || "")
     .trim()
@@ -16,6 +46,9 @@ function applyCustomConditionIcons() {
     const title = img.getAttribute("title");
     if (!title) return;
 
+    // Built-in AboveVTT conditions/statuses should keep AboveVTT's own icons.
+    if (AVTT_BUILT_IN_CONDITIONS.has(title)) return;
+
     const filename = avttCustomConditionToFilename(title);
     const customUrl = `chrome-extension://${extensionId}/assets/conditons/${filename}`;
 
@@ -31,47 +64,6 @@ new MutationObserver(applyCustomConditionIcons).observe(document.documentElement
   childList: true,
   subtree: true
 });
-
-
-
-function avttSlugifyConditionName(name) {
-  return String(name || "")
-    .trim()
-    .toLowerCase()
-    .replace(/['’]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
-function injectCustomConditionIcon(conditionName) {
-  const slug = avttSlugifyConditionName(conditionName);
-  if (!slug) return;
-
-  const styleId = `avtt-custom-condition-icon-${slug}`;
-  if (document.getElementById(styleId)) return;
-
-  const extensionId = document.documentElement.getAttribute("data-avtt-extension-id");
-  if (!extensionId) {
-    console.warn("Custom condition icon: missing extension id");
-    return;
-  }
-
-  const iconUrl = `chrome-extension://${extensionId}/icons/conditions/${slug}.svg`;
-
-  const style = document.createElement("style");
-  style.id = styleId;
-  style.textContent = `
-    .icon-${slug}:before,
-    .context-menu-icon-${slug}:before {
-      content: url("${iconUrl}") !important;
-    }
-  `;
-
-  document.documentElement.appendChild(style);
-}
-
-injectCustomConditionIcon("Hunters Mark");
-
 
 
 
