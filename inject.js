@@ -1,4 +1,4 @@
-console.log("AVTT inject loaded");
+
 
 window.AVTTBridge = {
   token: null,
@@ -21,10 +21,7 @@ window.AVTTBridge = {
     if (this.token.options?.itemType === "pc") {
       const characterId = this.token.options.characterId;
       this.pc = window.pcs?.find(p => p.characterId === characterId) || null;
-
-      if (this.pc) {
-        return true;
-      }
+      if (this.pc) return true;
     }
 
     const monsterId =
@@ -54,11 +51,16 @@ window.AVTTBridge = {
         damageType: el.getAttribute("data-rolldamagetype")
       }));
 
-    this.actionNames = [...new Set(
-      this.actionRolls.map(r => r.name).filter(Boolean)
-    )];
+    this.actionNames = [...new Set(this.actionRolls.map(r => r.name).filter(Boolean))];
 
     return true;
+  },
+
+  getDisplayName() {
+    return this.pc?.name ||
+      this.monster?.name ||
+      this.token?.options?.name ||
+      "Selected Token";
   },
 
   getAbilityModifier(ability) {
@@ -66,21 +68,10 @@ window.AVTTBridge = {
       return this.pc.abilities?.find(a => a.name === ability)?.modifier ?? 0;
     }
 
-    const statMap = {
-      str: 1,
-      dex: 2,
-      con: 3,
-      int: 4,
-      wis: 5,
-      cha: 6
-    };
-
-    const score = this.monster?.stats?.find(
-      s => s.statId === statMap[ability]
-    )?.value;
+    const statMap = { str: 1, dex: 2, con: 3, int: 4, wis: 5, cha: 6 };
+    const score = this.monster?.stats?.find(s => s.statId === statMap[ability])?.value;
 
     if (typeof score !== "number") return 0;
-
     return Math.floor((score - 10) / 2);
   },
 
@@ -102,44 +93,13 @@ window.AVTTBridge = {
       return this.monster.proficiencyBonus;
     }
 
-    const crId = this.monster?.challengeRatingId;
-
-    if (typeof crId !== "number") return 2;
-
-    let cr = 0;
-    if (crId <= 4) cr = 0;
-    else cr = crId - 4;
-
-    return Math.max(2, 2 + Math.floor((cr - 1) / 4));
+    return 2;
   },
 
   getSavingThrowBonus(ability) {
     if (this.pc) {
       return this.pc.abilities?.find(a => a.name === ability)?.save
         ?? this.getAbilityModifier(ability);
-    }
-
-    const statMap = { str: 1, dex: 2, con: 3, int: 4, wis: 5, cha: 6 };
-    const statId = statMap[ability];
-
-    const save = this.monster?.savingThrows?.find(s =>
-      s.statId === statId ||
-      s.stat?.id === statId ||
-      String(s.name || "").toLowerCase().includes(ability)
-    );
-
-    if (save) {
-      const candidates = [
-        save.modifier,
-        save.value,
-        save.bonus,
-        save.total,
-        save.statModifier,
-        save.saveModifier
-      ];
-
-      const found = candidates.find(v => typeof v === "number");
-      if (typeof found === "number") return found;
     }
 
     return this.getAbilityModifier(ability);
@@ -153,31 +113,8 @@ window.AVTTBridge = {
         String(s.name || "").toLowerCase().replace(/[^a-z]/g, "") === clean
       );
 
-      if (entry && typeof entry.modifier === "number") {
-        return entry.modifier;
-      }
+      if (entry && typeof entry.modifier === "number") return entry.modifier;
     }
-
-    const skillIdMap = {
-      acrobatics: 1,
-      animalhandling: 2,
-      arcana: 3,
-      athletics: 4,
-      deception: 5,
-      history: 6,
-      insight: 7,
-      intimidation: 8,
-      investigation: 9,
-      medicine: 10,
-      nature: 11,
-      perception: 12,
-      performance: 13,
-      persuasion: 14,
-      religion: 15,
-      sleightofhand: 16,
-      stealth: 17,
-      survival: 18
-    };
 
     const skillAbilityMap = {
       acrobatics: "dex",
@@ -200,27 +137,6 @@ window.AVTTBridge = {
       survival: "wis"
     };
 
-    const skillId = skillIdMap[clean];
-
-    const entry = this.monster?.skills?.find(s => {
-      const name = String(s.name || s.skill?.name || "").toLowerCase().replace(/[^a-z]/g, "");
-      return name === clean || s.skillId === skillId || s.id === skillId;
-    });
-
-    if (entry) {
-      const candidates = [
-        entry.modifier,
-        entry.value,
-        entry.bonus,
-        entry.total,
-        entry.skillModifier
-      ];
-
-      const found = candidates.find(v => typeof v === "number");
-      if (typeof found === "number") return found;
-    }
-
-    // Monster fallback: parse DDB skillsHtml, e.g. "Stealth +3, Perception +2"
     if (this.monster?.skillsHtml) {
       const htmlText = new DOMParser()
         .parseFromString(this.monster.skillsHtml, "text/html")
@@ -253,10 +169,7 @@ window.AVTTBridge = {
       if (displayName) {
         const escaped = displayName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         const match = htmlText.match(new RegExp(`${escaped}\\s*([+-]\\d+)`, "i"));
-
-        if (match) {
-          return Number(match[1]);
-        }
+        if (match) return Number(match[1]);
       }
     }
 
@@ -280,7 +193,6 @@ window.AVTTBridge = {
       chaScore: this.getAbilityScore("cha"),
 
       pb: this.getProficiencyBonus(),
-      prof: this.getProficiencyBonus(),
 
       strSave: this.getSavingThrowBonus("str"),
       dexSave: this.getSavingThrowBonus("dex"),
@@ -308,13 +220,12 @@ window.AVTTBridge = {
       stealth: this.getSkillBonus("stealth"),
       survival: this.getSkillBonus("survival"),
 
-      initiative: this.monster?.initiativeBonus ?? this.getAbilityModifier("dex"),
-      ac: this.token?.options?.armorClass ?? this.monster?.armorClass ?? 0,
-      hp: this.token?.options?.hitPointInfo?.current ?? this.token?.options?.hp ?? 0,
-      maxHp: this.token?.options?.hitPointInfo?.maximum ?? this.token?.options?.max_hp ?? 0
+      ac: this.token?.options?.armorClass ?? this.pc?.armorClass ?? this.monster?.armorClass ?? 0,
+      hp: this.token?.options?.hitPointInfo?.current ?? this.pc?.hitPointInfo?.current ?? 0,
+      maxHp: this.token?.options?.hitPointInfo?.maximum ?? this.pc?.hitPointInfo?.maximum ?? 0
     };
 
-    let expression = formula;
+    let expression = String(formula || "1d20");
 
     Object.entries(values).forEach(([key, value]) => {
       const normalized = typeof value === "number" && value >= 0 ? `+${value}` : `${value}`;
@@ -327,127 +238,12 @@ window.AVTTBridge = {
       .replace(/\+-/g, "-");
   },
 
-  getDisplayName() {
-    return this.pc?.name ||
-      this.monster?.name ||
-      this.token?.options?.name ||
-      "Selected Token";
-  },
-
-  getLabelValues() {
-    return {
-      name: this.getDisplayName(),
-      pb: this.getProficiencyBonus(),
-      str: this.getAbilityModifier("str"),
-      dex: this.getAbilityModifier("dex"),
-      con: this.getAbilityModifier("con"),
-      int: this.getAbilityModifier("int"),
-      wis: this.getAbilityModifier("wis"),
-      cha: this.getAbilityModifier("cha"),
-      level: this.pc?.level ?? "",
-      ac: this.token?.options?.armorClass ?? this.pc?.armorClass ?? this.monster?.armorClass ?? "",
-      hp: this.token?.options?.hitPointInfo?.current ?? this.pc?.hitPointInfo?.current ?? "",
-      maxHp: this.token?.options?.hitPointInfo?.maximum ?? this.pc?.hitPointInfo?.maximum ?? ""
-    };
-  },
-
   resolveLabel(label) {
-    let output = String(label || "{name} Roll");
-
-    Object.entries(this.getLabelValues()).forEach(([key, value]) => {
-      output = output.replaceAll(`{${key}}`, String(value));
-    });
-
-    return output;
-  },
-
-  debug() {
-    const abilities = ["str", "dex", "con", "int", "wis", "cha"];
-
-    const skills = [
-      "acrobatics",
-      "animalhandling",
-      "arcana",
-      "athletics",
-      "deception",
-      "history",
-      "insight",
-      "intimidation",
-      "investigation",
-      "medicine",
-      "nature",
-      "perception",
-      "performance",
-      "persuasion",
-      "religion",
-      "sleightofhand",
-      "stealth",
-      "survival"
-    ];
-
-    const skillLabels = {
-      animalhandling: "animalHandling",
-      sleightofhand: "sleightOfHand"
-    };
-
-    const snapshot = {
-      type: this.pc ? "PC" : this.monster ? "Monster" : "Unknown",
-      name: this.getDisplayName?.() || this.token?.options?.name || "Selected Token",
-
-      abilities: Object.fromEntries(
-        abilities.map(a => [a, this.getAbilityModifier(a)])
-      ),
-
-      abilityScores: Object.fromEntries(
-        abilities.map(a => [a, this.getAbilityScore(a)])
-      ),
-
-      saves: Object.fromEntries(
-        abilities.map(a => [a, this.getSavingThrowBonus(a)])
-      ),
-
-      skills: Object.fromEntries(
-        skills.map(s => [skillLabels[s] || s, this.getSkillBonus(s)])
-      ),
-
-      pb: this.getProficiencyBonus(),
-      level: this.pc?.level ?? null,
-
-      ac: this.token?.options?.armorClass ?? this.pc?.armorClass ?? this.monster?.armorClass ?? null,
-      hp: this.token?.options?.hitPointInfo?.current ?? this.pc?.hitPointInfo?.current ?? null,
-      maxHp: this.token?.options?.hitPointInfo?.maximum ?? this.pc?.hitPointInfo?.maximum ?? null,
-
-      initiative: this.pc?.initiativeBonus ?? this.monster?.initiativeBonus ?? this.getAbilityModifier("dex"),
-
-      actions: this.actionNames,
-
-      raw: {
-        tokenOptions: this.token?.options,
-        pc: this.pc,
-        monster: this.monster
-      }
-    };
-
-    console.log("AVTTBridge debug snapshot:", snapshot);
-    return snapshot;
-  },
-
-  getTokenInfo() {
-    if (!this.token) return null;
-
-    return {
-      tokenId: this.token.options.id,
-      name: this.token.options.name || this.monster?.name || "Selected Token",
-      hp: this.token.options.hitPointInfo?.current ?? this.token.options.hp ?? null,
-      maxHp: this.token.options.hitPointInfo?.maximum ?? this.token.options.max_hp ?? null,
-      ac: this.token.options.armorClass ?? this.monster?.armorClass ?? null,
-      actions: this.actionNames.map((name, index) => ({
-        slot: index + 1,
-        name
-      }))
-    };
+    return String(label || "Selected Token Roll")
+      .replaceAll("{name}", this.getDisplayName());
   }
 };
+
 
 window.addEventListener("message", (event) => {
   if (event.data?.type !== "AVTT_BRIDGE_ROLL") return;
@@ -477,6 +273,80 @@ window.addEventListener("message", (event) => {
 
   const cmd = event.data.command;
   console.log("AVTT injected command:", cmd);
+
+  if (cmd.command === "sendTextToGamelog") {
+    try {
+      const title = cmd.title || "";
+      const text = cmd.text || "";
+      const headerStyle = cmd.headerStyle || "simple";
+
+      const escapeHtml = (value) => String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;");
+
+      const safeTitle = escapeHtml(title);
+      const safeText = escapeHtml(text).replace(/\n/g, "<br>");
+
+      const wrapStyle = "display:block;width:100%;text-align:left !important;";
+      const titleStyle = "display:block;width:100%;text-align:left !important;font-weight:bold;font-size:16px;margin:0 0 6px 0;padding:0;";
+      const bodyStyle = "display:block;width:100%;text-align:left !important;font-size:13px;line-height:1.35;margin:0;padding:0;";
+
+      let html = "";
+
+      if (headerStyle === "none" || !safeTitle) {
+        html = `
+          <div style="${wrapStyle}">
+            <div style="${bodyStyle}">${safeText}</div>
+          </div>
+        `;
+      } else if (headerStyle === "bar") {
+        html = `
+          <div style="${wrapStyle}">
+            <div style="${titleStyle}background:#8b1e1e;color:white;padding:6px 8px;border-radius:6px 6px 0 0;">
+              ${safeTitle}
+            </div>
+            <div style="${bodyStyle};padding-top:8px;">${safeText}</div>
+          </div>
+        `;
+      } else if (headerStyle === "warning") {
+        html = `
+          <div style="${wrapStyle}">
+            <div style="${titleStyle}background:#3b0f0f;color:#ffd0d0;padding:6px 8px;border-left:4px solid #d22;">
+              ${safeTitle}
+            </div>
+            <div style="${bodyStyle};padding-top:8px;">${safeText}</div>
+          </div>
+        `;
+      } else if (headerStyle === "readaloud") {
+        html = `
+          <div style="${wrapStyle}background:#f3ead6;color:#2a1a10;border:1px solid #b59b6a;border-radius:6px;padding:10px;">
+            <div style="${titleStyle}border-bottom:1px solid #b59b6a;padding-bottom:4px;margin-bottom:8px;">
+              ${safeTitle}
+            </div>
+            <div style="${bodyStyle}">${safeText}</div>
+          </div>
+        `;
+      } else {
+        html = `
+          <div style="${wrapStyle}">
+            <div style="${titleStyle}border-bottom:1px solid #999;padding-bottom:4px;margin-bottom:8px;">
+              ${safeTitle}
+            </div>
+            <div style="${bodyStyle}">${safeText}</div>
+          </div>
+        `;
+      }
+
+      send_html_to_gamelog(html);
+
+      console.log("sendTextToGamelog:", { title, text, headerStyle });
+    } catch (err) {
+      console.error("sendTextToGamelog error:", err);
+    }
+
+    return;
+  }
 
   if (cmd.command === "openGameLogTab") {
     $("#switch_gamelog").trigger("click");
@@ -629,7 +499,7 @@ window.addEventListener("message", (event) => {
     (async () => {
       try {
         const ability = (cmd.ability || "str").toLowerCase();
-        const label = cmd.label || `${ability.toUpperCase()} Check`;
+        const label = cmd.label || `{name} ${ability.toUpperCase()} Check`;
 
         window.postMessage({
           type: "AVTT_BRIDGE_COMMAND",
@@ -655,7 +525,7 @@ window.addEventListener("message", (event) => {
         const label = cmd.label || "Selected Token Roll";
 
         if (!(await window.AVTTBridge.refresh())) {
-          console.warn("rollSelectedFormula: no selected monster");
+          console.warn("rollSelectedFormula: no selected monster/token");
           return;
         }
 
@@ -690,17 +560,34 @@ window.addEventListener("message", (event) => {
     (async () => {
       try {
         const part = cmd.part || "all";
-        const slot = cmd.slot !== undefined ? Number(cmd.slot) : null;
+        const slot = cmd.slot ? Number(cmd.slot) : null;
         const actionName = cmd.action;
 
-        if (!(await window.AVTTBridge.refresh())) {
-          console.warn("rollSelectedAction: no selected monster");
+        const tokenId = CURRENTLY_SELECTED_TOKENS?.[0];
+        const token = TOKEN_OBJECTS?.[tokenId];
+
+        if (!token) {
+          console.warn("rollSelectedAction: no selected token");
           return;
         }
 
-        const monster = window.AVTTBridge.monster;
-        const allRolls = window.AVTTBridge.actionRolls;
-        const actionNames = window.AVTTBridge.actionNames;
+        const monsterId = token.options.monster || token.options.stat || token.options.itemId;
+        let monster = cached_monster_items?.[monsterId]?.monsterData;
+
+        if (!monster) {
+          open_selected_token_stat?.();
+          await new Promise(resolve => setTimeout(resolve, 2500));
+          monster = cached_monster_items?.[monsterId]?.monsterData;
+        }
+
+        if (!monster) {
+          console.warn("rollSelectedAction: no monster data found", monsterId);
+          return;
+        }
+
+        const allRolls = actionRolls;
+
+        const actionNames = [...new Set(allRolls.map(r => r.name).filter(Boolean))];
 
         const selectedAction = slot
           ? actionNames[slot - 1]
@@ -757,7 +644,10 @@ window.addEventListener("message", (event) => {
   if (cmd.command === "getSelectedTokenInfo") {
     (async () => {
       try {
-        if (!(await window.AVTTBridge.refresh())) {
+        const tokenId = CURRENTLY_SELECTED_TOKENS?.[0];
+        const token = TOKEN_OBJECTS?.[tokenId];
+
+        if (!token) {
           window.postMessage({
             type: "AVTT_SELECTED_TOKEN_INFO",
             tokenInfo: null
@@ -765,7 +655,40 @@ window.addEventListener("message", (event) => {
           return;
         }
 
-        const tokenInfo = window.AVTTBridge.getTokenInfo();
+        const monsterId = token.options.monster || token.options.stat || token.options.itemId;
+        let monster = cached_monster_items?.[monsterId]?.monsterData;
+
+        if (!monster) {
+          open_selected_token_stat?.();
+          await new Promise(resolve => setTimeout(resolve, 2500));
+          monster = cached_monster_items?.[monsterId]?.monsterData;
+        }
+
+        const actionRolls = monster
+          ? [...new DOMParser()
+              .parseFromString(monster.actionsDescription || "", "text/html")
+              .querySelectorAll("[data-dicenotation]")]
+              .map(el => ({
+                name: el.getAttribute("data-rollaction"),
+                expression: el.getAttribute("data-dicenotation"),
+                rollType: el.getAttribute("data-rolltype"),
+                damageType: el.getAttribute("data-rolldamagetype")
+              }))
+          : [];
+
+        const actionNames = [...new Set(actionRolls.map(r => r.name).filter(Boolean))];
+
+        const tokenInfo = {
+          tokenId,
+          name: token.options.name || monster?.name || "Selected Token",
+          hp: token.options.hitPointInfo?.current ?? token.options.hp ?? null,
+          maxHp: token.options.hitPointInfo?.maximum ?? token.options.max_hp ?? null,
+          ac: token.options.armorClass ?? monster?.armorClass ?? null,
+          actions: actionNames.map((name, index) => ({
+            slot: index + 1,
+            name
+          }))
+        };
 
         window.postMessage({
           type: "AVTT_SELECTED_TOKEN_INFO",
@@ -781,33 +704,33 @@ window.addEventListener("message", (event) => {
     return;
   }
 
-  if (cmd.command === "getSelectedActions") {
-    (async () => {
-      try {
-        if (!(await window.AVTTBridge.refresh())) {
-          window.postMessage({
-            type: "AVTT_SELECTED_ACTIONS",
-            actions: []
-          }, "*");
-          return;
-        }
+if (cmd.command === "getSelectedActions") {
+  (async () => {
 
-        const actions = window.AVTTBridge.actionNames.map((name, i) => ({
-          slot: i + 1,
-          name
-        }));
+    if (!(await window.AVTTBridge.refresh())) {
+      window.postMessage({
+        type: "AVTT_SELECTED_ACTIONS",
+        actions: []
+      }, "*");
+      return;
+    }
 
-        window.postMessage({
-          type: "AVTT_SELECTED_ACTIONS",
-          actions
-        }, "*");
+    window.postMessage({
+      type: "AVTT_SELECTED_ACTIONS",
+      actions: window.AVTTBridge.actionNames.map((name, i) => ({
+        slot: i + 1,
+        name
+      }))
+    }, "*");
 
-        console.log("getSelectedActions:", actions);
-      } catch (err) {
-        console.error("getSelectedActions error:", err);
-      }
-    })();
+    console.log(
+      "getSelectedActions:",
+      window.AVTTBridge.actionNames
+    );
 
-    return;
-  }
+  })();
+
+  return;
+}
+
 });
