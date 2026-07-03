@@ -412,7 +412,27 @@ window.addEventListener("message", (event) => {
   }
 
   if (cmd.command === "toggleCondition") {
-    const condition = String(cmd.condition || "prone").toLowerCase();
+    const rawCondition = String(cmd.condition || "prone").toLowerCase();
+
+    const conditionNames = {
+      blinded: "Blinded",
+      charmed: "Charmed",
+      deafened: "Deafened",
+      exhaustion: "Exhaustion",
+      frightened: "Frightened",
+      grappled: "Grappled",
+      incapacitated: "Incapacitated",
+      invisible: "Invisible",
+      paralyzed: "Paralyzed",
+      petrified: "Petrified",
+      poisoned: "Poisoned",
+      prone: "Prone",
+      restrained: "Restrained",
+      stunned: "Stunned",
+      unconscious: "Unconscious"
+    };
+
+    const condition = conditionNames[rawCondition] || rawCondition;
 
     CURRENTLY_SELECTED_TOKENS.forEach(id => {
       const token = window.TOKEN_OBJECTS[id];
@@ -422,7 +442,7 @@ window.addEventListener("message", (event) => {
 
       const hasCondition = nativeConditions.some(c => {
         const name = typeof c === "string" ? c : c.name;
-        return String(name || "").toLowerCase() === condition;
+        return String(name || "").toLowerCase() === condition.toLowerCase();
       });
 
       if (hasCondition) {
