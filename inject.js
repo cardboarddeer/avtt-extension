@@ -1,4 +1,49 @@
 
+function tokenToState(tokenId, token) {
+  const hpInfo = token.options?.hitPointInfo || {};
+
+  return {
+    id: tokenId,
+    name: token.options?.name || "Token",
+    itemType: token.options?.itemType || "",
+    hp: token.options?.hp ?? hpInfo.current ?? null,
+    maxHp: token.options?.max_hp ?? hpInfo.maximum ?? null,
+    tempHp: token.options?.temp_hp ?? hpInfo.temp ?? 0,
+    armorClass: token.options?.armorClass ?? null,
+    image: token.options?.imgsrc || token.options?.decorations?.avatar?.avatarUrl || "",
+    conditions: token.options?.conditions || [],
+    customConditions: token.options?.custom_conditions || []
+  };
+}
+
+function getCombatState() {
+  const selectedTokenId = CURRENTLY_SELECTED_TOKENS?.[0];
+  const selectedToken = TOKEN_OBJECTS?.[selectedTokenId];
+
+  const tokens = Object.entries(TOKEN_OBJECTS || {})
+    .map(([tokenId, token]) => tokenToState(tokenId, token))
+    .filter(token => token.itemType === "pc");
+
+  return {
+    selected: Boolean(selectedToken),
+    selectedToken: selectedToken ? tokenToState(selectedTokenId, selectedToken) : null,
+    pcs: tokens,
+    time: Date.now()
+  };
+}
+
+setInterval(() => {
+  try {
+    window.postMessage({
+      type: "AVTT_COMBAT_STATE",
+      combatState: getCombatState()
+    }, "*");
+  } catch (err) {
+    console.warn("Combat state error:", err);
+  }
+}, 1000);
+
+
 const AVTT_BUILT_IN_CONDITIONS = new Set([
   "Blinded",
   "Charmed",
@@ -85,10 +130,14 @@ window.AVTTBridge = {
 
     if (!this.token) return false;
 
-    if (this.token.options?.itemType === "pc") {
+    if (["pc", "myToken"].includes(this.token.options?.itemType)) {
       const characterId = this.token.options.characterId;
-      this.pc = window.pcs?.find(p => p.characterId === characterId) || null;
-      if (this.pc) return true;
+
+      this.pc =
+        window.pcs?.find(p => p.characterId === characterId) ||
+        this.token.options;
+
+      return true;
     }
 
     const monsterId =
