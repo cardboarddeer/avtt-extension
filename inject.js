@@ -12,31 +12,118 @@ function tokenToState(tokenId, token) {
     armorClass: token.options?.armorClass ?? null,
     image: token.options?.imgsrc || token.options?.decorations?.avatar?.avatarUrl || "",
     conditions: token.options?.conditions || [],
-    customConditions: token.options?.custom_conditions || []
+    customConditions: token.options?.custom_conditions || [],
+    cardImage: null
   };
 }
 
-function getCombatState() {
+function loadImageForCanvas(src) {
+  return new Promise(resolve => {
+    if (!src) return resolve(null);
+
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
+async function renderHpCard(pc) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 144;
+  canvas.height = 144;
+
+  const ctx = canvas.getContext("2d");
+
+  ctx.fillStyle = "#141414";
+  ctx.fillRect(0, 0, 144, 144);
+
+  const themeColor = pc.color || "#2a2a2a";
+
+  ctx.fillStyle = themeColor;
+  ctx.beginPath();
+  ctx.roundRect(8, 8, 128, 84, 12);
+  ctx.fill();
+
+  ctx.fillStyle = "rgba(0,0,0,0.25)";
+  ctx.fillRect(8, 8, 128, 84);
+
+  const initials = String(pc.name || "PC")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(part => part[0]?.toUpperCase())
+    .join("");
+
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 34px Arial";
+  ctx.textAlign = "center";
+  ctx.fillText(initials || "PC", 72, 61);
+
+  ctx.fillStyle = "rgba(17,17,17,0.95)";
+  ctx.fillRect(0, 92, 144, 52);
+
+  const hp = Number(pc.hp || 0);
+  const maxHp = Number(pc.maxHp || 0);
+  const tempHp = Number(pc.tempHp || 0);
+  const pct = maxHp > 0 ? Math.max(0, Math.min(1, hp / maxHp)) : 0;
+
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 13px Arial";
+  ctx.textAlign = "center";
+  ctx.fillText(pc.name || "PC", 72, 111);
+
+  ctx.fillStyle = "#333333";
+  ctx.beginPath();
+  ctx.roundRect(16, 119, 112, 10, 5);
+  ctx.fill();
+
+  ctx.fillStyle = "#d83a3a";
+  ctx.beginPath();
+  ctx.roundRect(16, 119, Math.round(112 * pct), 10, 5);
+  ctx.fill();
+
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 13px Arial";
+  ctx.fillText(`${hp}/${maxHp}${tempHp ? ` +${tempHp}` : ""}`, 72, 141);
+
+  return canvas.toDataURL("image/png");
+}
+async function getCombatState() {
   const selectedTokenId = CURRENTLY_SELECTED_TOKENS?.[0];
   const selectedToken = TOKEN_OBJECTS?.[selectedTokenId];
 
-  const tokens = Object.entries(TOKEN_OBJECTS || {})
+  const pcs = Object.entries(TOKEN_OBJECTS || {})
     .map(([tokenId, token]) => tokenToState(tokenId, token))
-    .filter(token => token.itemType === "pc");
+    .filter(token =>
+      token.itemType === "pc" ||
+      (token.itemType === "myToken" && token.hp != null && token.maxHp != null && token.maxHp > 0)
+    );
+
+  for (const pc of pcs) {
+    pc.cardImage = await renderHpCard(pc);
+  }
+
+  const selectedTokenState = selectedToken ? tokenToState(selectedTokenId, selectedToken) : null;
+
+  if (selectedTokenState) {
+    selectedTokenState.cardImage = await renderHpCard(selectedTokenState);
+  }
 
   return {
     selected: Boolean(selectedToken),
-    selectedToken: selectedToken ? tokenToState(selectedTokenId, selectedToken) : null,
-    pcs: tokens,
+    selectedToken: selectedTokenState,
+    pcs,
     time: Date.now()
   };
 }
 
-setInterval(() => {
+setInterval(async () => {
   try {
     window.postMessage({
       type: "AVTT_COMBAT_STATE",
-      combatState: getCombatState()
+      combatState: await getCombatState()
     }, "*");
   } catch (err) {
     console.warn("Combat state error:", err);
