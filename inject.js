@@ -1,6 +1,7 @@
 
-function tokenToState(tokenId, token) {
+function tokenToState(tokenId, token, pcData = null) {
   const hpInfo = token.options?.hitPointInfo || {};
+  const walkingSpeed = pcData?.speeds?.find(speed => speed.name === "Walking")?.distance;
 
   return {
     id: tokenId,
@@ -10,6 +11,7 @@ function tokenToState(tokenId, token) {
     maxHp: token.options?.max_hp ?? hpInfo.maximum ?? null,
     tempHp: token.options?.temp_hp ?? hpInfo.temp ?? 0,
     armorClass: token.options?.armorClass ?? null,
+    speed: walkingSpeed ?? token.options?.speed ?? token.options?.speeds?.walk ?? token.options?.speeds?.walking ?? null,
     image: token.options?.imgsrc || token.options?.decorations?.avatar?.avatarUrl || "",
     conditions: token.options?.conditions || [],
     customConditions: token.options?.custom_conditions || [],
@@ -36,57 +38,71 @@ async function renderHpCard(pc) {
 
   const ctx = canvas.getContext("2d");
 
-  ctx.fillStyle = "#141414";
-  ctx.fillRect(0, 0, 144, 144);
-
-  const themeColor = pc.color || "#2a2a2a";
-
-  ctx.fillStyle = themeColor;
-  ctx.beginPath();
-  ctx.roundRect(8, 8, 128, 84, 12);
-  ctx.fill();
-
-  ctx.fillStyle = "rgba(0,0,0,0.25)";
-  ctx.fillRect(8, 8, 128, 84);
-
-  const initials = String(pc.name || "PC")
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map(part => part[0]?.toUpperCase())
-    .join("");
-
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 34px Arial";
-  ctx.textAlign = "center";
-  ctx.fillText(initials || "PC", 72, 61);
-
-  ctx.fillStyle = "rgba(17,17,17,0.95)";
-  ctx.fillRect(0, 92, 144, 52);
-
   const hp = Number(pc.hp || 0);
   const maxHp = Number(pc.maxHp || 0);
   const tempHp = Number(pc.tempHp || 0);
+  const ac = pc.armorClass ?? "?";
+  const speed = pc.speed ?? "?";
   const pct = maxHp > 0 ? Math.max(0, Math.min(1, hp / maxHp)) : 0;
 
+  let hpColor = "#3fb950";
+  if (pct < 0.25) hpColor = "#f85149";
+  else if (pct < 0.5) hpColor = "#f0883e";
+  else if (pct < 0.75) hpColor = "#d29922";
+
+  ctx.fillStyle = "#080808";
+  ctx.fillRect(0, 0, 144, 144);
+
+  const name = String(pc.name || "PC");
+  const shortName = name.length > 15 ? name.slice(0, 14) + "…" : name;
+
   ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 13px Arial";
+  ctx.font = "bold 16px Arial";
   ctx.textAlign = "center";
-  ctx.fillText(pc.name || "PC", 72, 111);
+  ctx.fillText(shortName, 72, 18);
 
-  ctx.fillStyle = "#333333";
+  ctx.fillStyle = "#2b2b2b";
   ctx.beginPath();
-  ctx.roundRect(16, 119, 112, 10, 5);
+  ctx.roundRect(8, 27, 128, 24, 12);
   ctx.fill();
 
-  ctx.fillStyle = "#d83a3a";
+  ctx.fillStyle = hpColor;
   ctx.beginPath();
-  ctx.roundRect(16, 119, Math.round(112 * pct), 10, 5);
+  ctx.roundRect(8, 27, Math.max(6, Math.round(128 * pct)), 24, 12);
+  ctx.fill();
+
+  if (tempHp > 0) {
+    ctx.strokeStyle = "#58c7f3";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.roundRect(6, 25, 132, 28, 14);
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 30px Arial";
+  ctx.fillText(`${hp}/${maxHp}`, 72, 86);
+
+  if (tempHp > 0) {
+    ctx.fillStyle = "#58c7f3";
+    ctx.font = "bold 13px Arial";
+    ctx.fillText(`+${tempHp} TEMP`, 72, 102);
+  }
+
+  ctx.fillStyle = "#1c1c1c";
+  ctx.beginPath();
+  ctx.roundRect(6, 108, 63, 33, 8);
+  ctx.fill();
+
+  ctx.fillStyle = "#1c1c1c";
+  ctx.beginPath();
+  ctx.roundRect(75, 108, 63, 33, 8);
   ctx.fill();
 
   ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 13px Arial";
-  ctx.fillText(`${hp}/${maxHp}${tempHp ? ` +${tempHp}` : ""}`, 72, 141);
+  ctx.font = "bold 25px Arial";
+  ctx.fillText(`🛡${ac}`, 38, 134);
+  ctx.fillText(`👣${speed}`, 106, 134);
 
   return canvas.toDataURL("image/png");
 }
@@ -94,8 +110,18 @@ async function getCombatState() {
   const selectedTokenId = CURRENTLY_SELECTED_TOKENS?.[0];
   const selectedToken = TOKEN_OBJECTS?.[selectedTokenId];
 
+  const pcByName = new Map((window.pcs || []).map(pc => [pc.name, pc]));
+  const pcByCharacterId = new Map((window.pcs || []).map(pc => [pc.characterId, pc]));
+
   const pcs = Object.entries(TOKEN_OBJECTS || {})
-    .map(([tokenId, token]) => tokenToState(tokenId, token))
+    .map(([tokenId, token]) => {
+      const match =
+        pcByCharacterId.get(token.options?.characterId) ||
+        pcByName.get(token.options?.name) ||
+        null;
+
+      return tokenToState(tokenId, token, match);
+    })
     .filter(token =>
       token.itemType === "pc" ||
       (token.itemType === "myToken" && token.hp != null && token.maxHp != null && token.maxHp > 0)
@@ -105,7 +131,13 @@ async function getCombatState() {
     pc.cardImage = await renderHpCard(pc);
   }
 
-  const selectedTokenState = selectedToken ? tokenToState(selectedTokenId, selectedToken) : null;
+  const selectedMatch = selectedToken
+    ? pcByCharacterId.get(selectedToken.options?.characterId) ||
+      pcByName.get(selectedToken.options?.name) ||
+      null
+    : null;
+
+  const selectedTokenState = selectedToken ? tokenToState(selectedTokenId, selectedToken, selectedMatch) : null;
 
   if (selectedTokenState) {
     selectedTokenState.cardImage = await renderHpCard(selectedTokenState);
@@ -448,6 +480,56 @@ window.AVTTBridge = {
 };
 
 
+
+function selectTokenByName(tokenName) {
+  const wanted = String(tokenName || "").trim().toLowerCase();
+  if (!wanted) return false;
+
+  const entry = Object.entries(TOKEN_OBJECTS || {}).find(([id, token]) =>
+    String(token.options?.name || "").trim().toLowerCase() === wanted
+  );
+
+  if (!entry) {
+    console.warn("selectTokenByName: token not found", tokenName);
+    return false;
+  }
+
+  const [tokenId, token] = entry;
+
+  try {
+    deselect_all_tokens?.();
+
+    CURRENTLY_SELECTED_TOKENS.splice(0, CURRENTLY_SELECTED_TOKENS.length, tokenId);
+    token.selected = true;
+
+    do_draw_selected_token_bounding_box?.();
+    draw_selected_token_bounding_box?.();
+
+    const tokenLeft = parseFloat(token.options?.left || "0");
+    const tokenTop = parseFloat(token.options?.top || "0");
+    const tokenSize = Number(token.options?.size || 100);
+
+    const mapX = tokenLeft + tokenSize / 2;
+    const mapY = tokenTop + tokenSize / 2;
+    const viewPoint = convert_point_from_map_to_view(mapX, mapY);
+    const center = center_of_view();
+
+    const centerOffsetX = center.x - window.scrollX;
+    const centerOffsetY = center.y - window.scrollY;
+
+    window.scrollTo({
+      left: Math.max(0, viewPoint.x - centerOffsetX),
+      top: Math.max(0, viewPoint.y - centerOffsetY),
+      behavior: "smooth"
+    });
+
+    console.log("Selected and centered token:", token.options?.name, tokenId);
+    return true;
+  } catch (err) {
+    console.error("selectTokenByName error:", err);
+    return false;
+  }
+}
 window.addEventListener("message", (event) => {
   if (event.data?.type !== "AVTT_BRIDGE_ROLL") return;
 
@@ -476,6 +558,11 @@ window.addEventListener("message", (event) => {
 
   const cmd = event.data.command;
   console.log("AVTT injected command:", cmd);
+
+  if (cmd.command === "selectToken") {
+    selectTokenByName(cmd.tokenName);
+    return;
+  }
 
   if (cmd.command === "sendTextToGamelog") {
     try {
