@@ -577,18 +577,19 @@ window.addEventListener("message", (event) => {
   const roll = event.data.roll;
   console.log("AVTT injected roll:", roll);
 
-  window.EXPERIMENTAL_SETTINGS = window.EXPERIMENTAL_SETTINGS || {};
-  window.EXPERIMENTAL_SETTINGS["rpgRoller"] = true;
-
-  diceRoller.roll(
-    {
-      expression: roll.expression,
-      rollType: roll.rollType,
-      action: roll.action
-    },
-    false,
-    20,
-    2,
+  window.diceRoller.roll(
+    new DiceRoll(
+      roll.expression,
+      roll.action || "AboveVTT",
+      roll.rollType || "custom",
+      window.PLAYER_NAME,
+      window.PLAYER_IMG,
+      undefined,
+      undefined
+    ),
+    undefined,
+    undefined,
+    undefined,
     undefined,
     roll.damageType || undefined
   );
