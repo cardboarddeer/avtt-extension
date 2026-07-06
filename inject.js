@@ -7,9 +7,9 @@ function tokenToState(tokenId, token, pcData = null) {
     id: tokenId,
     name: token.options?.name || "Token",
     itemType: token.options?.itemType || "",
-    hp: token.options?.hp ?? hpInfo.current ?? null,
-    maxHp: token.options?.max_hp ?? hpInfo.maximum ?? null,
-    tempHp: token.options?.temp_hp ?? hpInfo.temp ?? 0,
+    hp: hpInfo.current ?? token.options?.hp ?? null,
+    maxHp: hpInfo.maximum ?? token.options?.max_hp ?? null,
+    tempHp: hpInfo.temp ?? token.options?.temp_hp ?? 0,
     armorClass: token.options?.armorClass ?? null,
     speed: walkingSpeed ?? token.options?.speed ?? token.options?.speeds?.walk ?? token.options?.speeds?.walking ?? null,
     image: token.options?.imgsrc || token.options?.decorations?.avatar?.avatarUrl || "",
@@ -103,6 +103,10 @@ async function renderHpCard(pc) {
   ctx.font = "bold 25px Arial";
   ctx.fillText(`🛡${ac}`, 38, 134);
   ctx.fillText(`👣${speed}`, 106, 134);
+
+  // Tiny invisible pixel changes when HP changes, forcing Stream Deck to treat image as new.
+  ctx.fillStyle = `rgba(${hp % 255}, ${maxHp % 255}, ${tempHp % 255}, 0.01)`;
+  ctx.fillRect(0, 0, 1, 1);
 
   return canvas.toDataURL("image/png");
 }
@@ -481,6 +485,43 @@ window.AVTTBridge = {
 
 
 
+
+function setSelectedTokenSize(sizeSquares) {
+  const newSize = Number(sizeSquares);
+
+  if (![0.5, 1, 2, 3, 4].includes(newSize)) {
+    console.warn("Invalid token size:", sizeSquares);
+    return false;
+  }
+
+  const tokenIds = [...(CURRENTLY_SELECTED_TOKENS || [])];
+
+  if (!tokenIds.length) {
+    console.warn("No selected tokens to resize.");
+    return false;
+  }
+
+  for (const tokenId of tokenIds) {
+    const token = TOKEN_OBJECTS?.[tokenId];
+    if (!token) continue;
+
+    token.options.gridSquares = newSize;
+    token.options.tokenSize = newSize;
+    token.options.imageSize = 1;
+    token.options.size = CURRENT_SCENE_DATA.hpps * newSize;
+
+    token.throttlePlace?.();
+    token.debounceSyncMessage?.();
+
+    console.log("Resized token:", token.options?.name, newSize);
+  }
+
+  do_draw_selected_token_bounding_box?.();
+  draw_selected_token_bounding_box?.();
+
+  return true;
+}
+
 function selectTokenByName(tokenName) {
   const wanted = String(tokenName || "").trim().toLowerCase();
   if (!wanted) return false;
@@ -561,6 +602,11 @@ window.addEventListener("message", (event) => {
 
   if (cmd.command === "selectToken") {
     selectTokenByName(cmd.tokenName);
+    return;
+  }
+
+  if (cmd.command === "setSelectedTokenSize") {
+    setSelectedTokenSize(cmd.size);
     return;
   }
 

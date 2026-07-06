@@ -1,3 +1,4 @@
+document.documentElement.setAttribute("data-avtt-extension-id", chrome.runtime.id);
 console.log("AVTT Bridge content loaded");
 
 const script = document.createElement("script");
@@ -27,3 +28,15 @@ setInterval(() => {
     }, "*");
   });
 }, 1000);
+
+
+window.addEventListener("message", (event) => {
+  if (event.source !== window) return;
+  if (event.data?.type !== "AVTT_COMBAT_STATE") return;
+
+  fetch("http://localhost:3000/combat-state", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(event.data.combatState)
+  }).catch(() => {});
+});
