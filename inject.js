@@ -577,22 +577,29 @@ window.addEventListener("message", (event) => {
   const roll = event.data.roll;
   console.log("AVTT injected roll:", roll);
 
-  window.diceRoller.roll(
-    new DiceRoll(
-      roll.expression,
-      roll.action || "AboveVTT",
-      roll.rollType || "custom",
-      window.PLAYER_NAME,
-      window.PLAYER_IMG,
-      undefined,
-      undefined
-    ),
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    roll.damageType || undefined
+  // Use AboveVTT's native DiceRoll path so 3D dice and pending/fulfilled messages work.
+  const diceRoll = new DiceRoll(
+    roll.expression,
+    roll.action || "Stream Deck",
+    roll.rollType === "custom" ? "roll" : (roll.rollType || "roll"),
+    roll.displayName || window.PLAYER_NAME || "Stream Deck",
+    roll.imgUrl || window.PLAYER_IMG || undefined,
+    roll.entityType || undefined,
+    roll.entityId || undefined
   );
+
+  if (roll.damageType) {
+    window.diceRoller.roll(
+      diceRoll,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      roll.damageType
+    );
+  } else {
+    window.diceRoller.roll(diceRoll);
+  }
 });
 
 window.addEventListener("message", (event) => {
@@ -894,13 +901,20 @@ window.addEventListener("message", (event) => {
         const formula = cmd.formula || "1d20";
         const label = cmd.label || "Selected Token Roll";
 
-        if (!(await window.AVTTBridge.refresh())) {
+        const needsSelectedToken = /\{[^}]+\}/.test(formula) || /\{[^}]+\}/.test(label);
+
+        if (needsSelectedToken && !(await window.AVTTBridge.refresh())) {
           console.warn("rollSelectedFormula: no selected monster/token");
           return;
         }
 
-        const expression = window.AVTTBridge.resolveFormula(formula);
-        const action = window.AVTTBridge.resolveLabel(label);
+        const expression = needsSelectedToken
+          ? window.AVTTBridge.resolveFormula(formula)
+          : formula.replace(/\s+/g, "");
+
+        const action = needsSelectedToken
+          ? window.AVTTBridge.resolveLabel(label)
+          : label;
 
         const roll = {
           expression,
