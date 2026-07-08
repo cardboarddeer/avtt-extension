@@ -157,6 +157,24 @@ async function getCombatState() {
 
 setInterval(async () => {
   try {
+    const presets = JSON.parse(localStorage.getItem("AURA_PRESETS") || "[]");
+
+    await fetch("http://localhost:3000/aura-presets", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        presets
+      })
+    });
+  } catch (err) {
+    // Bridge may be offline; ignore.
+  }
+}, 2000);
+
+setInterval(async () => {
+  try {
     window.postMessage({
       type: "AVTT_COMBAT_STATE",
       combatState: await getCombatState()
@@ -751,6 +769,95 @@ window.addEventListener("message", (event) => {
         .find(b => b.innerText === "Save")
         ?.click();
     }, 500);
+
+    return;
+  }
+
+  if (cmd.command === "toggleAura") {
+    CURRENTLY_SELECTED_TOKENS.forEach(id => {
+      const token = window.TOKEN_OBJECTS[id];
+      if (!token) return;
+
+      token.options.auraVisible = !token.options.auraVisible;
+      token.place_sync_persist();
+
+      console.log("toggleAura:", {
+        token: token.options?.name,
+        auraVisible: token.options.auraVisible
+      });
+    });
+
+    return;
+  }
+
+  if (cmd.command === "toggleAuraPreset") {
+    const preset = cmd.preset;
+
+    if (!preset) {
+      console.warn("toggleAuraPreset: missing preset");
+      return;
+    }
+
+    const normalizeAura = aura => ({
+      feet: String(aura?.feet ?? "0"),
+      color: String(aura?.color ?? "rgba(0, 0, 0, 0)")
+    });
+
+    const presetAura1 = normalizeAura(preset.aura1);
+    const presetAura2 = normalizeAura(preset.aura2);
+    const presetAnimation = preset.animation || "";
+
+    CURRENTLY_SELECTED_TOKENS.forEach(id => {
+      const token = window.TOKEN_OBJECTS[id];
+      if (!token) return;
+
+      const tokenAura1 = normalizeAura(token.options.aura1);
+      const tokenAura2 = normalizeAura(token.options.aura2);
+      const tokenAnimation =
+        token.options.animation?.aura ||
+        token.options.animation ||
+        "";
+
+      const alreadyApplied =
+        token.options.auraVisible === true &&
+        tokenAura1.feet === presetAura1.feet &&
+        tokenAura1.color === presetAura1.color &&
+        tokenAura2.feet === presetAura2.feet &&
+        tokenAura2.color === presetAura2.color &&
+        String(tokenAnimation || "") === String(presetAnimation || "");
+
+      if (alreadyApplied) {
+        token.options.auraVisible = false;
+      } else {
+        token.options.aura1 = { ...presetAura1 };
+        token.options.aura2 = { ...presetAura2 };
+        token.options.auraVisible = true;
+
+        const customAuraMask = String(cmd.customAuraMask || "").trim();
+
+        token.options.animation = {
+          ...(typeof token.options.animation === "object" ? token.options.animation : {}),
+          aura: presetAnimation || token.options.animation?.aura || "none"
+        };
+
+        if (customAuraMask) {
+          token.options.animation.customAuraMask = customAuraMask;
+          token.options.animation.customAuraRotate = cmd.customAuraRotate === true;
+        } else {
+          delete token.options.animation.customAuraMask;
+          delete token.options.animation.customAuraRotate;
+        }
+      }
+
+      token.place_sync_persist();
+
+      console.log("toggleAuraPreset:", {
+        token: token.options?.name,
+        preset: preset.name,
+        alreadyApplied,
+        auraVisible: token.options.auraVisible
+      });
+    });
 
     return;
   }
