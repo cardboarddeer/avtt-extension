@@ -756,11 +756,40 @@ window.addEventListener("message", (event) => {
   }
 
   if (cmd.command === "toggleCondition") {
+    const mode = cmd.mode || "condition";
     const condition = String(cmd.condition || "Prone");
 
     CURRENTLY_SELECTED_TOKENS.forEach(id => {
       const token = window.TOKEN_OBJECTS[id];
       if (!token) return;
+
+      if (mode === "customMarker") {
+        const color = String(cmd.markerColor || "#ff0000");
+        const text = String(cmd.markerText || condition || "").trim();
+
+        const customConditions = token.options.custom_conditions || [];
+        const existing = customConditions.find(c =>
+          String(c.name || "").toLowerCase() === color.toLowerCase()
+        );
+
+        if (!existing) {
+          token.addCondition(color, text);
+        } else if (String(existing.text || "") === text) {
+          token.removeCondition(color);
+        } else {
+          token.removeCondition(color);
+          token.addCondition(color, text);
+        }
+
+        token.place_sync_persist();
+
+        console.log("toggleCustomMarker:", {
+          color,
+          text
+        });
+
+        return;
+      }
 
       const nativeConditions = token.options.conditions || [];
       const customConditions = token.options.custom_conditions || [];
