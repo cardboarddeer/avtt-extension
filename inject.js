@@ -362,6 +362,30 @@ window.AVTTBridge = {
     return this.getAbilityModifier(ability);
   },
 
+  getInitiativeBonus() {
+    const candidates = [
+      this.pc?.initiative,
+      this.pc?.initiativeBonus,
+      this.pc?.stats?.initiative,
+      this.monster?.initiative,
+      this.monster?.initiativeBonus,
+      this.monster?.stats?.initiative,
+      this.token?.options?.initiative,
+      this.token?.options?.initiativeBonus
+    ];
+
+    for (const value of candidates) {
+      if (typeof value === "number") return value;
+
+      if (typeof value === "string") {
+        const match = value.match(/[+-]?\d+/);
+        if (match) return Number(match[0]);
+      }
+    }
+
+    return this.getAbilityModifier("dex");
+  },
+
   getSkillBonus(skill) {
     const clean = String(skill).toLowerCase().replace(/[^a-z]/g, "");
 
@@ -450,6 +474,8 @@ window.AVTTBridge = {
       chaScore: this.getAbilityScore("cha"),
 
       pb: this.getProficiencyBonus(),
+      initiative: this.getInitiativeBonus(),
+      init: this.getInitiativeBonus(),
 
       strSave: this.getSavingThrowBonus("str"),
       dexSave: this.getSavingThrowBonus("dex"),
