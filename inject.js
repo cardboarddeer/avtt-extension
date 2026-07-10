@@ -530,6 +530,53 @@ window.AVTTBridge = {
 
 
 
+const AVTT_TOKEN_STYLES = new Set([
+  "circle",
+  "square",
+  "virtualMiniCircle",
+  "virtualMiniSquare",
+  "noConstraint",
+  "definitelyNotAToken",
+  "labelToken",
+  "inPersonMini"
+]);
+
+function setSelectedTokenStyle(style) {
+  const tokenStyle = String(style || "");
+
+  if (!AVTT_TOKEN_STYLES.has(tokenStyle)) {
+    console.warn("Invalid token style:", style);
+    return false;
+  }
+
+  const tokenIds = [...(CURRENTLY_SELECTED_TOKENS || [])];
+
+  if (!tokenIds.length) {
+    console.warn("No selected tokens to restyle.");
+    return false;
+  }
+
+  tokenIds.forEach(id => {
+    const token = window.TOKEN_OBJECTS?.[id];
+    if (!token) return;
+
+    token.options.tokenStyleSelect = tokenStyle;
+
+    // AboveVTT also uses this legacy boolean for square tokens.
+    token.options.square = tokenStyle === "square";
+
+    token.place_sync_persist();
+
+    console.log("setSelectedTokenStyle:", {
+      token: token.options?.name,
+      tokenStyleSelect: token.options.tokenStyleSelect
+    });
+  });
+
+  return true;
+}
+
+
 function setSelectedTokenSize(sizeSquares) {
   const newSize = Number(sizeSquares);
 
@@ -654,6 +701,11 @@ window.addEventListener("message", (event) => {
 
   if (cmd.command === "selectToken") {
     selectTokenByName(cmd.tokenName);
+    return;
+  }
+
+  if (cmd.command === "setTokenStyle") {
+    setSelectedTokenStyle(cmd.style);
     return;
   }
 
