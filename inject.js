@@ -574,6 +574,100 @@ const AVTT_HEALTH_VISUALS = {
   }
 };
 
+function normalizeTokenImageUrl(value) {
+  return String(value || "").trim();
+}
+
+function applySelectedTokenImage(imageUrl) {
+  const url = normalizeTokenImageUrl(imageUrl);
+
+  if (!url) {
+    console.warn("applySelectedTokenImage: missing image URL");
+    return false;
+  }
+
+  const tokenIds = [...(CURRENTLY_SELECTED_TOKENS || [])];
+
+  if (!tokenIds.length) {
+    console.warn("No selected tokens to update.");
+    return false;
+  }
+
+  tokenIds.forEach(id => {
+    const token = window.TOKEN_OBJECTS?.[id];
+    if (!token) return;
+
+    const existingImages = Array.isArray(token.options.alternativeImages)
+      ? [...token.options.alternativeImages]
+      : [];
+
+    if (!existingImages.includes(url)) {
+      if (
+        existingImages.length > 0 &&
+        existingImages[existingImages.length - 1] !== ""
+      ) {
+        existingImages.push("");
+      }
+
+      existingImages.push(url);
+    }
+
+    token.options.alternativeImages = existingImages;
+    token.options.imgsrc = url;
+
+    token.place_sync_persist();
+
+    console.log("applySelectedTokenImage:", {
+      token: token.options?.name,
+      imgsrc: token.options.imgsrc,
+      alternativeImages: token.options.alternativeImages
+    });
+  });
+
+  return true;
+}
+
+function resetSelectedTokenImage() {
+  const tokenIds = [...(CURRENTLY_SELECTED_TOKENS || [])];
+
+  if (!tokenIds.length) {
+    console.warn("No selected tokens to reset.");
+    return false;
+  }
+
+  let resetCount = 0;
+
+  tokenIds.forEach(id => {
+    const token = window.TOKEN_OBJECTS?.[id];
+    if (!token) return;
+
+    const defaultImage = Array.isArray(token.options.alternativeImages)
+      ? token.options.alternativeImages.find(image =>
+          typeof image === "string" && image.trim()
+        )
+      : null;
+
+    if (!defaultImage) {
+      console.warn("resetSelectedTokenImage: no default image found", {
+        token: token.options?.name
+      });
+      return;
+    }
+
+    token.options.imgsrc = defaultImage;
+    token.place_sync_persist();
+    resetCount += 1;
+
+    console.log("resetSelectedTokenImage:", {
+      token: token.options?.name,
+      imgsrc: token.options.imgsrc
+    });
+  });
+
+  return resetCount > 0;
+}
+
+
 function setSelectedTokenHealthVisual(visual) {
   const settings = AVTT_HEALTH_VISUALS[visual];
 
@@ -774,6 +868,16 @@ window.addEventListener("message", (event) => {
 
   if (cmd.command === "selectToken") {
     selectTokenByName(cmd.tokenName);
+    return;
+  }
+
+  if (cmd.command === "applyTokenImage") {
+    applySelectedTokenImage(cmd.imageUrl);
+    return;
+  }
+
+  if (cmd.command === "resetTokenImage") {
+    resetSelectedTokenImage();
     return;
   }
 
