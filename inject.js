@@ -541,6 +541,79 @@ const AVTT_TOKEN_STYLES = new Set([
   "inPersonMini"
 ]);
 
+const AVTT_HEALTH_VISUALS = {
+  aura: {
+    healthauratype: "aura",
+    enablepercenthpbar: false,
+    disableaura: false,
+    hidehpbar: false
+  },
+  auraBloodied50: {
+    healthauratype: "aura-bloodied-50",
+    enablepercenthpbar: false,
+    disableaura: false,
+    hidehpbar: false
+  },
+  conditionBloodied50: {
+    healthauratype: "condition-bloodied-50",
+    enablepercenthpbar: false,
+    disableaura: true,
+    hidehpbar: false
+  },
+  hpMeter: {
+    healthauratype: "bar",
+    enablepercenthpbar: true,
+    disableaura: true,
+    hidehpbar: false
+  },
+  none: {
+    healthauratype: "none",
+    enablepercenthpbar: false,
+    disableaura: true,
+    hidehpbar: false
+  }
+};
+
+function setSelectedTokenHealthVisual(visual) {
+  const settings = AVTT_HEALTH_VISUALS[visual];
+
+  if (!settings) {
+    console.warn("Invalid token health visual:", visual);
+    return false;
+  }
+
+  const tokenIds = [...(CURRENTLY_SELECTED_TOKENS || [])];
+
+  if (!tokenIds.length) {
+    console.warn("No selected tokens to update.");
+    return false;
+  }
+
+  tokenIds.forEach(id => {
+    const token = window.TOKEN_OBJECTS?.[id];
+    if (!token) return;
+
+    token.options.healthauratype = settings.healthauratype;
+    token.options.enablepercenthpbar = settings.enablepercenthpbar;
+    token.options.disableaura = settings.disableaura;
+    token.options.hidehpbar = settings.hidehpbar;
+
+    token.place_sync_persist();
+
+    console.log("setSelectedTokenHealthVisual:", {
+      token: token.options?.name,
+      visual,
+      healthauratype: token.options.healthauratype,
+      enablepercenthpbar: token.options.enablepercenthpbar,
+      disableaura: token.options.disableaura,
+      hidehpbar: token.options.hidehpbar
+    });
+  });
+
+  return true;
+}
+
+
 function setSelectedTokenStyle(style) {
   const tokenStyle = String(style || "");
 
@@ -701,6 +774,11 @@ window.addEventListener("message", (event) => {
 
   if (cmd.command === "selectToken") {
     selectTokenByName(cmd.tokenName);
+    return;
+  }
+
+  if (cmd.command === "setTokenHealthVisual") {
+    setSelectedTokenHealthVisual(cmd.visual);
     return;
   }
 
