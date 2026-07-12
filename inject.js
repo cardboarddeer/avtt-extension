@@ -641,15 +641,32 @@ function resetSelectedTokenImage() {
     const token = window.TOKEN_OBJECTS?.[id];
     if (!token) return;
 
-    const defaultImage = Array.isArray(token.options.alternativeImages)
-      ? token.options.alternativeImages.find(image =>
-          typeof image === "string" && image.trim()
-        )
-      : null;
+    let defaultImage = null;
+
+    if (
+      token.options?.itemType === "pc" &&
+      token.options?.characterId !== undefined
+    ) {
+      const characterId = String(token.options.characterId);
+
+      const pc = window.pcs?.find(candidate =>
+        String(candidate?.characterId) === characterId
+      );
+
+      defaultImage = String(pc?.image || "").trim() || null;
+    }
+
+    if (!defaultImage && Array.isArray(token.options.alternativeImages)) {
+      defaultImage = token.options.alternativeImages.find(image =>
+        typeof image === "string" && image.trim()
+      ) || null;
+    }
 
     if (!defaultImage) {
       console.warn("resetSelectedTokenImage: no default image found", {
-        token: token.options?.name
+        token: token.options?.name,
+        itemType: token.options?.itemType,
+        characterId: token.options?.characterId
       });
       return;
     }
