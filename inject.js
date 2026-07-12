@@ -1171,27 +1171,6 @@ window.addEventListener("message", (event) => {
     const presetLight1 = normalize(preset.light1);
     const presetLight2 = normalize(preset.light2);
 
-    const presetVision = normalize(
-      cmd.vision || {
-        feet: "0",
-        color: "rgba(142, 142, 142, 1)"
-      }
-    );
-
-    const presetTruesight = normalize(
-      cmd.truesight || {
-        feet: "0",
-        color: "rgba(142, 142, 142, 1)"
-      }
-    );
-
-    const presetDevilsight = normalize(
-      cmd.devilsight || {
-        feet: "0",
-        color: "rgba(142, 142, 142, 1)"
-      }
-    );
-
     const animationPreset = cmd.animationPreset || null;
 
     const customMask = String(
@@ -1229,10 +1208,6 @@ window.addEventListener("message", (event) => {
 
       const currentLight1 = normalize(token.options.light1);
       const currentLight2 = normalize(token.options.light2);
-      const currentVision = normalize(token.options.vision);
-      const currentTruesight = normalize(token.options.truesight);
-      const currentDevilsight = normalize(token.options.devilsight);
-
       const currentAnimation =
         typeof token.options.animation === "object"
           ? token.options.animation
@@ -1258,12 +1233,6 @@ window.addEventListener("message", (event) => {
         currentLight1.color === presetLight1.color &&
         currentLight2.feet === presetLight2.feet &&
         currentLight2.color === presetLight2.color &&
-        currentVision.feet === presetVision.feet &&
-        currentVision.color === presetVision.color &&
-        currentTruesight.feet === presetTruesight.feet &&
-        currentTruesight.color === presetTruesight.color &&
-        currentDevilsight.feet === presetDevilsight.feet &&
-        currentDevilsight.color === presetDevilsight.color &&
         animationMatches;
 
       if (alreadyApplied) {
@@ -1287,10 +1256,6 @@ window.addEventListener("message", (event) => {
       } else {
         token.options.light1 = { ...presetLight1 };
         token.options.light2 = { ...presetLight2 };
-
-        token.options.vision = { ...presetVision };
-        token.options.truesight = { ...presetTruesight };
-        token.options.devilsight = { ...presetDevilsight };
 
         token.options.animation = {
           ...(typeof token.options.animation === "object"
@@ -1332,10 +1297,63 @@ window.addEventListener("message", (event) => {
         alreadyApplied,
         light1: token.options.light1,
         light2: token.options.light2,
-        vision: token.options.vision,
-        truesight: token.options.truesight,
-        devilsight: token.options.devilsight,
         animation: token.options.animation
+      });
+    });
+
+    return;
+  }
+
+  if (cmd.command === "toggleVisionType") {
+    const allowedSenses = new Set([
+      "vision",
+      "truesight",
+      "devilsight"
+    ]);
+
+    const sense = String(cmd.sense || "");
+
+    if (!allowedSenses.has(sense)) {
+      console.warn("toggleVisionType: invalid sense", sense);
+      return;
+    }
+
+    const feet = String(cmd.feet ?? "0");
+    const color = String(
+      cmd.color || "rgba(142, 142, 142, 1)"
+    );
+
+    CURRENTLY_SELECTED_TOKENS.forEach(id => {
+      const token = window.TOKEN_OBJECTS?.[id];
+      if (!token) return;
+
+      const current = token.options[sense] || {
+        feet: "0",
+        color
+      };
+
+      const alreadyApplied =
+        Number(current.feet || 0) > 0 &&
+        String(current.feet) === feet &&
+        String(current.color || "") === color;
+
+      token.options[sense] = alreadyApplied
+        ? {
+            ...current,
+            feet: "0"
+          }
+        : {
+            feet,
+            color
+          };
+
+      token.place_sync_persist();
+
+      console.log("toggleVisionType:", {
+        token: token.options?.name,
+        sense,
+        alreadyApplied,
+        value: token.options[sense]
       });
     });
 
