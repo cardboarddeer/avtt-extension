@@ -157,17 +157,49 @@ async function getCombatState() {
 
 setInterval(async () => {
   try {
-    const presets = JSON.parse(localStorage.getItem("AURA_PRESETS") || "[]");
+    const auraPresets = JSON.parse(
+      localStorage.getItem("AURA_PRESETS") || "[]"
+    );
 
-    await fetch("http://localhost:3000/aura-presets", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        presets
+    const lightPresets = JSON.parse(
+      localStorage.getItem("LOS_PRESETS") || "[]"
+    );
+
+    const animationPresets = JSON.parse(
+      localStorage.getItem("ANIMATION_PRESETS") || "[]"
+    );
+
+    await Promise.all([
+      fetch("http://localhost:3000/aura-presets", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          presets: auraPresets
+        })
+      }),
+
+      fetch("http://localhost:3000/light-presets", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          presets: lightPresets
+        })
+      }),
+
+      fetch("http://localhost:3000/animation-presets", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          presets: animationPresets
+        })
       })
-    });
+    ]);
   } catch (err) {
     // Bridge may be offline; ignore.
   }
@@ -1046,6 +1078,266 @@ window.addEventListener("message", (event) => {
         .find(b => b.innerText === "Save")
         ?.click();
     }, 500);
+
+    return;
+  }
+
+  if (cmd.command === "toggleLight") {
+    CURRENTLY_SELECTED_TOKENS.forEach(id => {
+      const token = window.TOKEN_OBJECTS?.[id];
+      if (!token) return;
+
+      const light1 = token.options.light1 || {};
+      const light2 = token.options.light2 || {};
+
+      const isOn =
+        Number(light1.feet || 0) > 0 ||
+        Number(light2.feet || 0) > 0;
+
+      token.options.animation = {
+        ...(typeof token.options.animation === "object"
+          ? token.options.animation
+          : {})
+      };
+
+      if (isOn) {
+        token.options.animation.previousLight1 = {
+          ...light1
+        };
+
+        token.options.animation.previousLight2 = {
+          ...light2
+        };
+
+        token.options.light1 = {
+          ...light1,
+          feet: "0"
+        };
+
+        token.options.light2 = {
+          ...light2,
+          feet: "0"
+        };
+      } else {
+        const previousLight1 =
+          token.options.animation.previousLight1;
+
+        const previousLight2 =
+          token.options.animation.previousLight2;
+
+        token.options.light1 = previousLight1
+          ? { ...previousLight1 }
+          : {
+              feet: "20",
+              color: "rgba(255, 255, 255, 1)"
+            };
+
+        token.options.light2 = previousLight2
+          ? { ...previousLight2 }
+          : {
+              feet: "20",
+              color: "rgba(142, 142, 142, 1)"
+            };
+      }
+
+      token.place_sync_persist();
+
+      console.log("toggleLight:", {
+        token: token.options?.name,
+        light1: token.options.light1,
+        light2: token.options.light2
+      });
+    });
+
+    return;
+  }
+
+  if (cmd.command === "toggleLightPreset") {
+    const preset = cmd.preset;
+
+    if (!preset) {
+      console.warn("toggleLightPreset: missing preset");
+      return;
+    }
+
+    const normalize = value => ({
+      feet: String(value?.feet ?? "0"),
+      color: String(
+        value?.color ??
+        "rgba(142, 142, 142, 1)"
+      )
+    });
+
+    const presetLight1 = normalize(preset.light1);
+    const presetLight2 = normalize(preset.light2);
+
+    const presetVision = normalize(
+      cmd.vision || {
+        feet: "0",
+        color: "rgba(142, 142, 142, 1)"
+      }
+    );
+
+    const presetTruesight = normalize(
+      cmd.truesight || {
+        feet: "0",
+        color: "rgba(142, 142, 142, 1)"
+      }
+    );
+
+    const presetDevilsight = normalize(
+      cmd.devilsight || {
+        feet: "0",
+        color: "rgba(142, 142, 142, 1)"
+      }
+    );
+
+    const animationPreset = cmd.animationPreset || null;
+
+    const customMask = String(
+      cmd.customLightMask ||
+      animationPreset?.mask ||
+      ""
+    ).trim();
+
+    const customRotate =
+      cmd.customLightRotate === true ||
+      animationPreset?.rotate === true;
+
+    const customRpmValue =
+      cmd.customLightRpm ??
+      animationPreset?.rpm;
+
+    const customRpm =
+      customRpmValue !== undefined &&
+      customRpmValue !== null &&
+      String(customRpmValue).trim() !== ""
+        ? String(customRpmValue)
+        : "";
+
+    const animationName = customMask
+      ? (
+          animationPreset?.name ||
+          cmd.animationName ||
+          "Custom Light"
+        )
+      : "";
+
+    CURRENTLY_SELECTED_TOKENS.forEach(id => {
+      const token = window.TOKEN_OBJECTS?.[id];
+      if (!token) return;
+
+      const currentLight1 = normalize(token.options.light1);
+      const currentLight2 = normalize(token.options.light2);
+      const currentVision = normalize(token.options.vision);
+      const currentTruesight = normalize(token.options.truesight);
+      const currentDevilsight = normalize(token.options.devilsight);
+
+      const currentAnimation =
+        typeof token.options.animation === "object"
+          ? token.options.animation
+          : {};
+
+      const animationMatches = customMask
+        ? (
+            String(currentAnimation.light || "") ===
+              String(animationName) &&
+            String(currentAnimation.customLightMask || "") ===
+              customMask &&
+            currentAnimation.customLightRotate === customRotate &&
+            String(currentAnimation.customLightRpm || "") ===
+              customRpm
+          )
+        : (
+            !currentAnimation.customLightMask &&
+            !currentAnimation.light
+          );
+
+      const alreadyApplied =
+        currentLight1.feet === presetLight1.feet &&
+        currentLight1.color === presetLight1.color &&
+        currentLight2.feet === presetLight2.feet &&
+        currentLight2.color === presetLight2.color &&
+        currentVision.feet === presetVision.feet &&
+        currentVision.color === presetVision.color &&
+        currentTruesight.feet === presetTruesight.feet &&
+        currentTruesight.color === presetTruesight.color &&
+        currentDevilsight.feet === presetDevilsight.feet &&
+        currentDevilsight.color === presetDevilsight.color &&
+        animationMatches;
+
+      if (alreadyApplied) {
+        token.options.animation = {
+          ...(typeof token.options.animation === "object"
+            ? token.options.animation
+            : {}),
+          previousLight1: { ...presetLight1 },
+          previousLight2: { ...presetLight2 }
+        };
+
+        token.options.light1 = {
+          ...presetLight1,
+          feet: "0"
+        };
+
+        token.options.light2 = {
+          ...presetLight2,
+          feet: "0"
+        };
+      } else {
+        token.options.light1 = { ...presetLight1 };
+        token.options.light2 = { ...presetLight2 };
+
+        token.options.vision = { ...presetVision };
+        token.options.truesight = { ...presetTruesight };
+        token.options.devilsight = { ...presetDevilsight };
+
+        token.options.animation = {
+          ...(typeof token.options.animation === "object"
+            ? token.options.animation
+            : {}),
+          previousLight1: { ...presetLight1 },
+          previousLight2: { ...presetLight2 }
+        };
+
+        if (customMask) {
+          token.options.animation.light = animationName;
+
+          token.options.animation.customLightMask =
+            customMask;
+
+          token.options.animation.customLightRotate =
+            customRotate;
+
+          if (customRpm) {
+            token.options.animation.customLightRpm =
+              customRpm;
+          } else {
+            delete token.options.animation.customLightRpm;
+          }
+        } else {
+          delete token.options.animation.light;
+          delete token.options.animation.customLightMask;
+          delete token.options.animation.customLightRotate;
+          delete token.options.animation.customLightRpm;
+          delete token.options.animation.customLightDarkvision;
+        }
+      }
+
+      token.place_sync_persist();
+
+      console.log("toggleLightPreset:", {
+        token: token.options?.name,
+        preset: preset.name,
+        alreadyApplied,
+        light1: token.options.light1,
+        light2: token.options.light2,
+        vision: token.options.vision,
+        truesight: token.options.truesight,
+        devilsight: token.options.devilsight,
+        animation: token.options.animation
+      });
+    });
 
     return;
   }
