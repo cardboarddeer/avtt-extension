@@ -620,6 +620,37 @@ setInterval(async () => {
       localStorage.getItem("ANIMATION_PRESETS") || "[]"
     );
 
+    const myTokens = (
+      window.tokenListItems || []
+    )
+      .filter(item =>
+        item?.type === "myToken"
+      )
+      .map(item => ({
+        id: String(item.id || ""),
+        name: String(item.name || ""),
+        type: String(item.type || "myToken"),
+        folderPath: String(item.folderPath || ""),
+        path:
+          typeof item.fullPath === "function"
+            ? String(item.fullPath() || "")
+            : [
+                String(item.folderPath || "")
+                  .replace(/\/$/, ""),
+                String(item.name || "")
+              ]
+                .filter(Boolean)
+                .join("/"),
+        image: String(item.image || "")
+      }))
+      .filter(item =>
+        item.name &&
+        item.path
+      )
+      .sort((a, b) =>
+        a.path.localeCompare(b.path)
+      );
+
     await Promise.all([
       fetch("http://localhost:3000/aura-presets", {
         method: "POST",
@@ -648,6 +679,16 @@ setInterval(async () => {
         },
         body: JSON.stringify({
           presets: animationPresets
+        })
+      }),
+
+      fetch("http://localhost:3000/my-tokens", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          tokens: myTokens
         })
       })
     ]);
@@ -1366,6 +1407,157 @@ window.addEventListener("message", (event) => {
   const cmd = event.data.command;
   console.log("AVTT injected command:", cmd);
 
+  if (cmd.command === "spawnTokenFromPath") {
+    void (async () => {
+
+      const tokenPath = String(
+        cmd.tokenPath || ""
+      ).trim();
+
+      const count = Math.max(
+        1,
+        Math.min(
+          50,
+          Math.floor(
+            Number(cmd.count || 1)
+          )
+        )
+      );
+
+      const requestedSize =
+        Number(cmd.sizeOverride);
+
+      const hasSizeOverride =
+        Number.isFinite(requestedSize) &&
+        requestedSize > 0;
+
+      if (!tokenPath) {
+        console.warn(
+          "spawnTokenFromPath: missing token path"
+        );
+        return;
+      }
+
+      const listItem =
+        window.find_sidebar_list_item_from_path?.(
+          tokenPath
+        );
+
+      if (!listItem) {
+        console.warn(
+          "spawnTokenFromPath: token not found",
+          tokenPath
+        );
+        return;
+      }
+
+      const center =
+        window.center_of_view?.();
+
+      if (!center) {
+        console.warn(
+          "spawnTokenFromPath: could not determine view center"
+        );
+        return;
+      }
+
+      const spacing = Math.max(
+        70,
+        Number(
+          window.CURRENT_SCENE_DATA?.hppS ||
+          window.CURRENT_SCENE_DATA?.hpps ||
+          70
+        )
+      );
+
+      const spawnedIds = [];
+
+      for (let index = 0; index < count; index += 1) {
+        const beforeIds = new Set(
+          Object.keys(
+            window.TOKEN_OBJECTS || {}
+          )
+        );
+
+        let offsetX = 0;
+        let offsetY = 0;
+
+        if (count > 1) {
+          const columnCount =
+            Math.ceil(Math.sqrt(count));
+
+          const rowCount =
+            Math.ceil(count / columnCount);
+
+          const column =
+            index % columnCount;
+
+          const row =
+            Math.floor(index / columnCount);
+
+          offsetX =
+            (
+              column -
+              (columnCount - 1) / 2
+            ) * spacing;
+
+          offsetY =
+            (
+              row -
+              (rowCount - 1) / 2
+            ) * spacing;
+        }
+
+        const extraOptions = {};
+
+        if (hasSizeOverride) {
+          extraOptions.tokenSize =
+            requestedSize;
+        }
+
+        await window.create_and_place_token?.(
+          listItem,
+          undefined,
+          undefined,
+          center.x + offsetX,
+          center.y + offsetY,
+          false,
+          "",
+          false,
+          extraOptions
+        );
+
+        const newIds = Object.keys(
+          window.TOKEN_OBJECTS || {}
+        ).filter(
+          id => !beforeIds.has(id)
+        );
+
+        spawnedIds.push(...newIds);
+      }
+
+      console.log(
+        "spawnTokenFromPath:",
+        {
+          tokenPath,
+          count,
+          sizeOverride:
+            hasSizeOverride
+              ? requestedSize
+              : null,
+          spawnedIds
+        }
+      );
+    })().catch(error => {
+      console.error(
+        "spawnTokenFromPath failed:",
+        error
+      );
+    });
+
+    return;
+  }
+
   if (cmd.command === "modifySelectedTokenHp") {
     const mode = String(cmd.mode || "");
     const amount = Math.max(
@@ -2059,6 +2251,93 @@ window.addEventListener("message", (event) => {
         return String(name || "").toLowerCase() === condition.toLowerCase();
       });
 
+      const isPc =
+        token.options?.itemType === "pc" &&
+        token.options?.characterId;
+
+      if (isPc) {
+        const characterId =
+          String(token.options.characterId);
+
+        const currentConditions = (
+          token.options.conditions || []
+        ).map(entry => {
+          if (typeof entry === "string") {
+            return {
+              name: entry,
+              level: null
+            };
+          }
+
+          return {
+            ...entry,
+            name: String(entry?.name || ""),
+            level: entry?.level ?? null
+          };
+        }).filter(entry => entry.name);
+
+        const nextConditions =
+          hasNativeCondition
+            ? currentConditions.filter(entry =>
+                String(entry.name || "")
+                  .toLowerCase() !==
+                condition.toLowerCase()
+              )
+            : [
+                ...currentConditions,
+                {
+                  name: condition,
+                  level: null
+                }
+              ];
+
+        token.options.conditions =
+          nextConditions.map(entry => ({
+            ...entry
+          }));
+
+        const pc =
+          (window.pcs || []).find(entry =>
+            String(entry.characterId) === characterId ||
+            entry.name === token.options?.name
+          );
+
+        if (pc) {
+          pc.conditions =
+            nextConditions.map(entry => ({
+              ...entry
+            }));
+        }
+
+        window.update_pc_with_data?.(
+          characterId,
+          {
+            conditions:
+              nextConditions.map(entry => ({
+                ...entry
+              }))
+          }
+        );
+
+        token.place_sync_persist();
+
+        console.log(
+          "toggleCondition: directly updated PC",
+          {
+            characterId,
+            token:
+              token.options?.name,
+            condition,
+            active:
+              !hasNativeCondition,
+            conditions:
+              nextConditions
+          }
+        );
+
+        return;
+      }
+
       if (hasNativeCondition || hasCustomCondition) {
         token.removeCondition(condition);
       } else {
@@ -2103,15 +2382,68 @@ window.addEventListener("message", (event) => {
       const token = window.TOKEN_OBJECTS[id];
       if (!token) return;
 
-      const customConditions = [...(token.options.custom_conditions || [])];
+      const isPc =
+        token.options?.itemType === "pc" &&
+        token.options?.characterId;
+
+      if (isPc) {
+        const characterId =
+          String(token.options.characterId);
+
+        token.options.conditions = [];
+        token.options.custom_conditions = [];
+
+        const pc =
+          (window.pcs || []).find(entry =>
+            String(entry.characterId) === characterId ||
+            entry.name === token.options?.name
+          );
+
+        if (pc) {
+          pc.conditions = [];
+        }
+
+        window.update_pc_with_data?.(
+          characterId,
+          {
+            conditions: []
+          }
+        );
+
+        token.place_sync_persist();
+
+        console.log(
+          "clearMarkers: directly cleared PC conditions",
+          {
+            characterId,
+            token: token.options?.name
+          }
+        );
+
+        return;
+      }
+
+      const customConditions = [
+        ...(token.options.custom_conditions || [])
+      ];
+
       customConditions.forEach(condition => {
         token.removeCondition(condition.name);
       });
 
-      const nativeConditions = [...(token.options.conditions || [])];
+      const nativeConditions = [
+        ...(token.options.conditions || [])
+      ];
+
       nativeConditions.forEach(condition => {
-        const name = typeof condition === "string" ? condition : condition.name;
-        if (name) token.removeCondition(name);
+        const name =
+          typeof condition === "string"
+            ? condition
+            : condition.name;
+
+        if (name) {
+          token.removeCondition(name);
+        }
       });
 
       token.place_sync_persist();
