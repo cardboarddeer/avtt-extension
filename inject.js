@@ -1366,6 +1366,116 @@ window.addEventListener("message", (event) => {
   const cmd = event.data.command;
   console.log("AVTT injected command:", cmd);
 
+  if (cmd.command === "modifySelectedTokenHp") {
+    const mode = String(cmd.mode || "");
+    const amount = Math.max(
+      0,
+      Number(cmd.amount || 0)
+    );
+
+    const allowedModes = new Set([
+      "damage",
+      "heal",
+      "tempHp"
+    ]);
+
+    if (!allowedModes.has(mode)) {
+      console.warn(
+        "modifySelectedTokenHp: invalid mode",
+        mode
+      );
+      return;
+    }
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      console.warn(
+        "modifySelectedTokenHp: invalid amount",
+        cmd.amount
+      );
+      return;
+    }
+
+    const selectedIds = [
+      ...(CURRENTLY_SELECTED_TOKENS || [])
+    ];
+
+    if (!selectedIds.length) {
+      console.warn(
+        "modifySelectedTokenHp: no selected tokens"
+      );
+      return;
+    }
+
+    selectedIds.forEach(id => {
+      const token =
+        window.TOKEN_OBJECTS?.[id];
+
+      if (!token) return;
+
+      const before = {
+        hp: Number(token.hp || 0),
+        tempHp: Number(token.tempHp || 0),
+        maxHp: Number(token.maxHp || 0)
+      };
+
+      if (mode === "damage") {
+        let remainingDamage = amount;
+
+        if (before.tempHp > 0) {
+          const absorbed = Math.min(
+            before.tempHp,
+            remainingDamage
+          );
+
+          token.tempHp =
+            before.tempHp - absorbed;
+
+          remainingDamage -= absorbed;
+        }
+
+        if (remainingDamage > 0) {
+          token.hp = Math.max(
+            0,
+            before.hp - remainingDamage
+          );
+        }
+      }
+
+      if (mode === "heal") {
+        token.hp = Math.min(
+          before.maxHp,
+          before.hp + amount
+        );
+      }
+
+      if (mode === "tempHp") {
+        token.tempHp = Math.max(
+          before.tempHp,
+          amount
+        );
+      }
+
+      token.place_sync_persist();
+
+      console.log(
+        "modifySelectedTokenHp:",
+        {
+          token: token.options?.name,
+          mode,
+          amount,
+          before,
+          after: {
+            hp: Number(token.hp || 0),
+            tempHp: Number(token.tempHp || 0),
+            maxHp: Number(token.maxHp || 0)
+          }
+        }
+      );
+    });
+
+    return;
+  }
+
   if (cmd.command === "selectToken") {
     selectTokenByName(cmd.tokenName);
     return;
