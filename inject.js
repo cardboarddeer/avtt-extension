@@ -1,21 +1,167 @@
 
 function tokenToState(tokenId, token, pcData = null) {
   const hpInfo = token.options?.hitPointInfo || {};
-  const walkingSpeed = pcData?.speeds?.find(speed => speed.name === "Walking")?.distance;
+
+  const walkingSpeed =
+    pcData?.speeds?.find(
+      speed => speed.name === "Walking"
+    )?.distance;
+
+  const abilities = Array.isArray(pcData?.abilities)
+    ? pcData.abilities
+    : [];
+
+  function findAbility(name, abbreviation) {
+    const ability = abilities.find(entry => {
+      const entryName = String(entry?.name || "").toLowerCase();
+      const entryAbbreviation = String(
+        entry?.abbreviation ||
+        entry?.shortName ||
+        ""
+      ).toLowerCase();
+
+      return (
+        entryName === name.toLowerCase() ||
+        entryName === abbreviation.toLowerCase() ||
+        entryAbbreviation === abbreviation.toLowerCase()
+      );
+    });
+
+    const score = Number(
+      ability?.score ??
+      ability?.value ??
+      ability?.totalScore ??
+      10
+    );
+
+    const calculatedModifier =
+      Math.floor((score - 10) / 2);
+
+    const modifier = Number(
+      ability?.modifier ??
+      ability?.mod ??
+      calculatedModifier
+    );
+
+    return {
+      score: Number.isFinite(score) ? score : 10,
+      modifier: Number.isFinite(modifier)
+        ? modifier
+        : calculatedModifier
+    };
+  }
+
+  function highestNumericValue(entries) {
+    const values = (Array.isArray(entries) ? entries : [])
+      .map(entry =>
+        Number(
+          entry?.value ??
+          entry?.total ??
+          entry?.modifier ??
+          entry?.dc
+        )
+      )
+      .filter(Number.isFinite);
+
+    return values.length
+      ? Math.max(...values)
+      : 0;
+  }
+
+  const strength = findAbility("Strength", "STR");
+  const dexterity = findAbility("Dexterity", "DEX");
+  const constitution = findAbility("Constitution", "CON");
+  const intelligence = findAbility("Intelligence", "INT");
+  const wisdom = findAbility("Wisdom", "WIS");
+  const charisma = findAbility("Charisma", "CHA");
+
+  const spellSaveDc = highestNumericValue(
+    pcData?.castingInfo?.saveDcs
+  );
+
+  const spellAttackBonus = highestNumericValue(
+    pcData?.castingInfo?.spellAttacks
+  );
+
+  const proficiency = Number(
+    pcData?.proficiencyBonus ?? 0
+  );
 
   return {
     id: tokenId,
     name: token.options?.name || "Token",
     itemType: token.options?.itemType || "",
-    hp: hpInfo.current ?? token.options?.hp ?? null,
-    maxHp: hpInfo.maximum ?? token.options?.max_hp ?? null,
-    tempHp: hpInfo.temp ?? token.options?.temp_hp ?? 0,
-    armorClass: token.options?.armorClass ?? null,
-    speed: walkingSpeed ?? token.options?.speed ?? token.options?.speeds?.walk ?? token.options?.speeds?.walking ?? null,
-    image: token.options?.imgsrc || token.options?.decorations?.avatar?.avatarUrl || "",
-    conditions: token.options?.conditions || [],
-    customConditions: token.options?.custom_conditions || [],
-    cardImage: null
+
+    hp:
+      hpInfo.current ??
+      token.options?.hp ??
+      null,
+
+    maxHp:
+      hpInfo.maximum ??
+      token.options?.max_hp ??
+      null,
+
+    tempHp:
+      hpInfo.temp ??
+      token.options?.temp_hp ??
+      0,
+
+    armorClass:
+      token.options?.armorClass ??
+      pcData?.armorClass ??
+      null,
+
+    speed:
+      walkingSpeed ??
+      token.options?.speed ??
+      token.options?.speeds?.walk ??
+      token.options?.speeds?.walking ??
+      null,
+
+    conditions:
+      token.options?.conditions || [],
+
+    customConditions:
+      token.options?.custom_conditions || [],
+
+    deathSaveInfo: {
+      successCount: Number(
+        pcData?.deathSaveInfo?.successCount ?? 0
+      ),
+      failCount: Number(
+        pcData?.deathSaveInfo?.failCount ?? 0
+      )
+    },
+
+    spellSaveDc,
+    spellAttackBonus,
+
+    grappleDc:
+      8 +
+      strength.modifier +
+      proficiency,
+
+    passivePerception:
+      pcData?.passivePerception ?? null,
+
+    passiveInsight:
+      pcData?.passiveInsight ?? null,
+
+    darkvision:
+      Number(token.options?.vision?.feet || 0),
+
+    abilities: {
+      STR: strength,
+      DEX: dexterity,
+      CON: constitution,
+      INT: intelligence,
+      WIS: wisdom,
+      CHA: charisma
+    },
+
+    cardImage: null,
+    cardImages: null
   };
 }
 
@@ -31,7 +177,7 @@ function loadImageForCanvas(src) {
   });
 }
 
-async function renderHpCard(pc) {
+async function renderPlayerCard(pc, page = "combat") {
   const canvas = document.createElement("canvas");
   canvas.width = 144;
   canvas.height = 144;
@@ -43,108 +189,413 @@ async function renderHpCard(pc) {
   const tempHp = Number(pc.tempHp || 0);
   const ac = pc.armorClass ?? "?";
   const speed = pc.speed ?? "?";
-  const pct = maxHp > 0 ? Math.max(0, Math.min(1, hp / maxHp)) : 0;
-
-  let hpColor = "#3fb950";
-  if (pct < 0.25) hpColor = "#f85149";
-  else if (pct < 0.5) hpColor = "#f0883e";
-  else if (pct < 0.75) hpColor = "#d29922";
 
   ctx.fillStyle = "#080808";
   ctx.fillRect(0, 0, 144, 144);
 
   const name = String(pc.name || "PC");
-  const shortName = name.length > 15 ? name.slice(0, 14) + "…" : name;
+  const shortName =
+    name.length > 15
+      ? name.slice(0, 14) + "…"
+      : name;
 
   ctx.fillStyle = "#ffffff";
   ctx.font = "bold 16px Arial";
   ctx.textAlign = "center";
+  ctx.textBaseline = "alphabetic";
   ctx.fillText(shortName, 72, 18);
 
-  ctx.fillStyle = "#2b2b2b";
-  ctx.beginPath();
-  ctx.roundRect(8, 27, 128, 24, 12);
-  ctx.fill();
+  function drawFooter() {
+    ctx.fillStyle = "#1c1c1c";
 
-  ctx.fillStyle = hpColor;
-  ctx.beginPath();
-  ctx.roundRect(8, 27, Math.max(6, Math.round(128 * pct)), 24, 12);
-  ctx.fill();
-
-  if (tempHp > 0) {
-    ctx.strokeStyle = "#58c7f3";
-    ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.roundRect(6, 25, 132, 28, 14);
-    ctx.stroke();
+    ctx.roundRect(6, 108, 63, 33, 8);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.roundRect(75, 108, 63, 33, 8);
+    ctx.fill();
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font =
+      'bold 23px Arial, "Apple Color Emoji"';
+
+    ctx.fillText(`🛡${ac}`, 38, 134);
+    ctx.fillText(`👣${speed}`, 106, 134);
   }
 
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 30px Arial";
-  ctx.fillText(`${hp}/${maxHp}`, 72, 86);
+  function drawDeathCircle(x, y, filled, color) {
+    ctx.beginPath();
+    ctx.arc(x, y, 8, 0, Math.PI * 2);
 
-  if (tempHp > 0) {
-    ctx.fillStyle = "#58c7f3";
-    ctx.font = "bold 13px Arial";
-    ctx.fillText(`+${tempHp} TEMP`, 72, 102);
+    if (filled) {
+      ctx.fillStyle = color;
+      ctx.fill();
+    } else {
+      ctx.strokeStyle = "#777777";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
   }
 
-  ctx.fillStyle = "#1c1c1c";
-  ctx.beginPath();
-  ctx.roundRect(6, 108, 63, 33, 8);
-  ctx.fill();
+  function signedModifier(value) {
+    const number = Number(value || 0);
+    return number >= 0
+      ? `+${number}`
+      : String(number);
+  }
 
-  ctx.fillStyle = "#1c1c1c";
-  ctx.beginPath();
-  ctx.roundRect(75, 108, 63, 33, 8);
-  ctx.fill();
+  if (page === "reference") {
+    const values = [
+      ["🔮", pc.spellSaveDc || "—"],
+      ["✨", pc.spellAttackBonus
+        ? signedModifier(pc.spellAttackBonus)
+        : "—"],
+      ["🤼", pc.grappleDc ?? "—"],
+      ["👁", pc.darkvision ?? "—"],
+      ["👂", pc.passivePerception ?? "—"],
+      ["💭", pc.passiveInsight ?? "—"]
+    ];
 
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 25px Arial";
-  ctx.fillText(`🛡${ac}`, 38, 134);
-  ctx.fillText(`👣${speed}`, 106, 134);
+    const positions = [
+      [8, 51], [76, 51],
+      [8, 88], [76, 88],
+      [8, 125], [76, 125]
+    ];
 
-  // Tiny invisible pixel changes when HP changes, forcing Stream Deck to treat image as new.
-  ctx.fillStyle = `rgba(${hp % 255}, ${maxHp % 255}, ${tempHp % 255}, 0.01)`;
-  ctx.fillRect(0, 0, 1, 1);
+    values.forEach(([symbol, value], index) => {
+      const [x, y] = positions[index];
+
+      ctx.textAlign = "left";
+      ctx.fillStyle = "#ffffff";
+
+      ctx.font =
+        '21px "Apple Color Emoji", Arial';
+
+      ctx.fillText(symbol, x, y);
+
+      ctx.font = "bold 23px Arial";
+
+      ctx.fillText(
+        String(value),
+        x + 31,
+        y
+      );
+    });
+
+    ctx.textAlign = "center";
+  } else if (page === "abilities") {
+    const abilityRows = [
+      ["STR", "DEX"],
+      ["CON", "INT"],
+      ["WIS", "CHA"]
+    ];
+
+    const rowY = [51, 88, 125];
+
+    abilityRows.forEach((pair, rowIndex) => {
+      pair.forEach((abilityName, columnIndex) => {
+        const ability =
+          pc.abilities?.[abilityName] || {
+            score: 10,
+            modifier: 0
+          };
+
+        const x =
+          columnIndex === 0
+            ? 5
+            : 75;
+
+        ctx.textAlign = "left";
+
+        ctx.fillStyle = "#bdbdbd";
+        ctx.font = "bold 16px Arial";
+
+        ctx.fillText(
+          abilityName,
+          x,
+          rowY[rowIndex]
+        );
+
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 24px Arial";
+
+        ctx.fillText(
+          signedModifier(ability.modifier),
+          x + 35,
+          rowY[rowIndex]
+        );
+      });
+    });
+
+    ctx.textAlign = "center";
+  } else if (hp <= 0 && maxHp > 0) {
+    const successes = Math.max(
+      0,
+      Math.min(
+        3,
+        Number(
+          pc.deathSaveInfo?.successCount || 0
+        )
+      )
+    );
+
+    const failures = Math.max(
+      0,
+      Math.min(
+        3,
+        Number(
+          pc.deathSaveInfo?.failCount || 0
+        )
+      )
+    );
+
+    const status =
+      failures >= 3
+        ? "DEAD"
+        : successes >= 3
+          ? "STABLE"
+          : "DOWNED";
+
+    ctx.fillStyle =
+      failures >= 3
+        ? "#f85149"
+        : successes >= 3
+          ? "#58a6ff"
+          : "#f0b429";
+
+    ctx.font = "bold 18px Arial";
+    ctx.fillText(status, 72, 42);
+
+    ctx.font =
+      'bold 21px Arial, "Apple Color Emoji"';
+
+    ctx.fillStyle = "#3fb950";
+    ctx.fillText("✓", 28, 70);
+
+    ctx.fillStyle = "#f85149";
+    ctx.fillText("✕", 28, 97);
+
+    [0, 1, 2].forEach(index => {
+      const x = 56 + index * 27;
+
+      drawDeathCircle(
+        x,
+        64,
+        index < successes,
+        "#3fb950"
+      );
+
+      drawDeathCircle(
+        x,
+        91,
+        index < failures,
+        "#f85149"
+      );
+    });
+
+    drawFooter();
+  } else {
+    const pct =
+      maxHp > 0
+        ? Math.max(
+            0,
+            Math.min(1, hp / maxHp)
+          )
+        : 0;
+
+    let hpColor = "#3fb950";
+
+    if (pct < 0.25) {
+      hpColor = "#f85149";
+    } else if (pct < 0.5) {
+      hpColor = "#f0883e";
+    } else if (pct < 0.75) {
+      hpColor = "#d29922";
+    }
+
+    ctx.fillStyle = "#2b2b2b";
+    ctx.beginPath();
+    ctx.roundRect(8, 27, 128, 24, 12);
+    ctx.fill();
+
+    ctx.fillStyle = hpColor;
+    ctx.beginPath();
+    ctx.roundRect(
+      8,
+      27,
+      Math.max(6, Math.round(128 * pct)),
+      24,
+      12
+    );
+    ctx.fill();
+
+    if (tempHp > 0) {
+      ctx.strokeStyle = "#58c7f3";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.roundRect(6, 25, 132, 28, 14);
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 30px Arial";
+    ctx.fillText(
+      `${hp}/${maxHp}`,
+      72,
+      86
+    );
+
+    if (tempHp > 0) {
+      ctx.fillStyle = "#58c7f3";
+      ctx.font = "bold 13px Arial";
+      ctx.fillText(
+        `+${tempHp} TEMP`,
+        72,
+        102
+      );
+    }
+
+    drawFooter();
+  }
+
+  ctx.fillStyle =
+    `rgba(${hp % 255}, ` +
+    `${maxHp % 255}, ` +
+    `${tempHp % 255}, 0.01)`;
+
+  ctx.fillRect(
+    page === "reference"
+      ? 1
+      : page === "abilities"
+        ? 2
+        : 0,
+    0,
+    1,
+    1
+  );
 
   return canvas.toDataURL("image/png");
 }
 async function getCombatState() {
-  const selectedTokenId = CURRENTLY_SELECTED_TOKENS?.[0];
-  const selectedToken = TOKEN_OBJECTS?.[selectedTokenId];
+  const selectedTokenId =
+    CURRENTLY_SELECTED_TOKENS?.[0];
 
-  const pcByName = new Map((window.pcs || []).map(pc => [pc.name, pc]));
-  const pcByCharacterId = new Map((window.pcs || []).map(pc => [pc.characterId, pc]));
+  const selectedToken =
+    TOKEN_OBJECTS?.[selectedTokenId];
 
-  const pcs = Object.entries(TOKEN_OBJECTS || {})
+  const pcByName = new Map(
+    (window.pcs || []).map(pc => [
+      pc.name,
+      pc
+    ])
+  );
+
+  const pcByCharacterId = new Map(
+    (window.pcs || []).map(pc => [
+      pc.characterId,
+      pc
+    ])
+  );
+
+  const pcs = Object.entries(
+    TOKEN_OBJECTS || {}
+  )
     .map(([tokenId, token]) => {
       const match =
-        pcByCharacterId.get(token.options?.characterId) ||
-        pcByName.get(token.options?.name) ||
+        pcByCharacterId.get(
+          token.options?.characterId
+        ) ||
+        pcByName.get(
+          token.options?.name
+        ) ||
         null;
 
-      return tokenToState(tokenId, token, match);
+      return tokenToState(
+        tokenId,
+        token,
+        match
+      );
     })
     .filter(token =>
       token.itemType === "pc" ||
-      (token.itemType === "myToken" && token.hp != null && token.maxHp != null && token.maxHp > 0)
+      (
+        token.itemType === "myToken" &&
+        token.hp != null &&
+        token.maxHp != null &&
+        token.maxHp > 0
+      )
     );
 
   for (const pc of pcs) {
-    pc.cardImage = await renderHpCard(pc);
+    pc.cardImages = {
+      combat:
+        await renderPlayerCard(
+          pc,
+          "combat"
+        ),
+
+      reference:
+        await renderPlayerCard(
+          pc,
+          "reference"
+        ),
+
+      abilities:
+        await renderPlayerCard(
+          pc,
+          "abilities"
+        )
+    };
+
+    pc.cardImage =
+      pc.cardImages.combat;
   }
 
   const selectedMatch = selectedToken
-    ? pcByCharacterId.get(selectedToken.options?.characterId) ||
-      pcByName.get(selectedToken.options?.name) ||
-      null
+    ? (
+        pcByCharacterId.get(
+          selectedToken.options?.characterId
+        ) ||
+        pcByName.get(
+          selectedToken.options?.name
+        ) ||
+        null
+      )
     : null;
 
-  const selectedTokenState = selectedToken ? tokenToState(selectedTokenId, selectedToken, selectedMatch) : null;
+  const selectedTokenState =
+    selectedToken
+      ? tokenToState(
+          selectedTokenId,
+          selectedToken,
+          selectedMatch
+        )
+      : null;
 
   if (selectedTokenState) {
-    selectedTokenState.cardImage = await renderHpCard(selectedTokenState);
+    selectedTokenState.cardImages = {
+      combat:
+        await renderPlayerCard(
+          selectedTokenState,
+          "combat"
+        ),
+
+      reference:
+        await renderPlayerCard(
+          selectedTokenState,
+          "reference"
+        ),
+
+      abilities:
+        await renderPlayerCard(
+          selectedTokenState,
+          "abilities"
+        )
+    };
+
+    selectedTokenState.cardImage =
+      selectedTokenState.cardImages.combat;
   }
 
   return {
