@@ -1,137 +1,467 @@
 
-function tokenToState(tokenId, token, pcData = null) {
-  const hpInfo = token.options?.hitPointInfo || {};
+function tokenToState(
+  tokenId,
+  token,
+  pcData = null
+) {
+  const hpInfo =
+    token.options?.hitPointInfo || {};
 
   const walkingSpeed =
     pcData?.speeds?.find(
-      speed => speed.name === "Walking"
+      speed =>
+        speed.name === "Walking"
     )?.distance;
 
-  const abilities = Array.isArray(pcData?.abilities)
-    ? pcData.abilities
-    : [];
+  const abilities =
+    Array.isArray(pcData?.abilities)
+      ? pcData.abilities
+      : [];
 
-  function findAbility(name, abbreviation) {
-    const ability = abilities.find(entry => {
-      const entryName = String(entry?.name || "").toLowerCase();
-      const entryAbbreviation = String(
-        entry?.abbreviation ||
-        entry?.shortName ||
-        ""
-      ).toLowerCase();
+  const pcEffects =
+    token.options?.avttPcEffects &&
+    typeof token.options.avttPcEffects ===
+      "object"
+      ? token.options.avttPcEffects
+      : {};
 
-      return (
-        entryName === name.toLowerCase() ||
-        entryName === abbreviation.toLowerCase() ||
-        entryAbbreviation === abbreviation.toLowerCase()
+  function applyEffects(
+    baseValue,
+    effects
+  ) {
+    let value =
+      Number(baseValue);
+
+    if (!Number.isFinite(value)) {
+      value = 0;
+    }
+
+    const entries =
+      Array.isArray(effects)
+        ? effects
+        : [];
+
+    // Apply the newest SET effect first.
+    const setEffects =
+      entries.filter(effect =>
+        effect?.operation === "set"
       );
-    });
 
-    const score = Number(
-      ability?.score ??
-      ability?.value ??
-      ability?.totalScore ??
-      10
-    );
+    if (setEffects.length) {
+      const newestSet =
+        [...setEffects].sort(
+          (a, b) =>
+            Number(a?.updatedAt || 0) -
+            Number(b?.updatedAt || 0)
+        ).at(-1);
+
+      const setValue =
+        Number(newestSet?.value);
+
+      if (Number.isFinite(setValue)) {
+        value = setValue;
+      }
+    }
+
+    // Apply all remaining effects in stored order.
+    entries
+      .filter(effect =>
+        effect?.operation !== "set"
+      )
+      .forEach(effect => {
+        const amount =
+          Number(effect?.value);
+
+        if (!Number.isFinite(amount)) {
+          return;
+        }
+
+        switch (effect?.operation) {
+          case "add":
+            value += amount;
+            break;
+
+          case "subtract":
+            value -= amount;
+            break;
+
+          case "multiply":
+            value *= amount;
+            break;
+
+          case "divide":
+            if (amount !== 0) {
+              value /= amount;
+            }
+            break;
+        }
+      });
+
+    return value;
+  }
+
+  function findAbility(
+    name,
+    abbreviation
+  ) {
+    const ability =
+      abilities.find(entry => {
+        const entryName =
+          String(entry?.name || "")
+            .toLowerCase();
+
+        const entryAbbreviation =
+          String(
+            entry?.abbreviation ||
+            entry?.shortName ||
+            ""
+          ).toLowerCase();
+
+        return (
+          entryName ===
+            name.toLowerCase() ||
+          entryName ===
+            abbreviation.toLowerCase() ||
+          entryAbbreviation ===
+            abbreviation.toLowerCase()
+        );
+      });
+
+    const score =
+      Number(
+        ability?.score ??
+        ability?.value ??
+        ability?.totalScore ??
+        10
+      );
 
     const calculatedModifier =
-      Math.floor((score - 10) / 2);
+      Math.floor(
+        (score - 10) / 2
+      );
 
-    const modifier = Number(
-      ability?.modifier ??
-      ability?.mod ??
-      calculatedModifier
-    );
+    const modifier =
+      Number(
+        ability?.modifier ??
+        ability?.mod ??
+        calculatedModifier
+      );
 
     return {
-      score: Number.isFinite(score) ? score : 10,
-      modifier: Number.isFinite(modifier)
-        ? modifier
-        : calculatedModifier
+      score:
+        Number.isFinite(score)
+          ? score
+          : 10,
+
+      modifier:
+        Number.isFinite(modifier)
+          ? modifier
+          : calculatedModifier,
+
+      raw:
+        ability || null
     };
   }
 
   function highestNumericValue(entries) {
-    const values = (Array.isArray(entries) ? entries : [])
-      .map(entry =>
-        Number(
-          entry?.value ??
-          entry?.total ??
-          entry?.modifier ??
-          entry?.dc
-        )
+    const values =
+      (
+        Array.isArray(entries)
+          ? entries
+          : []
       )
-      .filter(Number.isFinite);
+        .map(entry =>
+          Number(
+            entry?.value ??
+            entry?.total ??
+            entry?.modifier ??
+            entry?.dc
+          )
+        )
+        .filter(Number.isFinite);
 
     return values.length
       ? Math.max(...values)
       : 0;
   }
 
-  const strength = findAbility("Strength", "STR");
-  const dexterity = findAbility("Dexterity", "DEX");
-  const constitution = findAbility("Constitution", "CON");
-  const intelligence = findAbility("Intelligence", "INT");
-  const wisdom = findAbility("Wisdom", "WIS");
-  const charisma = findAbility("Charisma", "CHA");
+  const baseAbilities = {
+    STR:
+      findAbility(
+        "Strength",
+        "STR"
+      ),
 
-  const spellSaveDc = highestNumericValue(
-    pcData?.castingInfo?.saveDcs
+    DEX:
+      findAbility(
+        "Dexterity",
+        "DEX"
+      ),
+
+    CON:
+      findAbility(
+        "Constitution",
+        "CON"
+      ),
+
+    INT:
+      findAbility(
+        "Intelligence",
+        "INT"
+      ),
+
+    WIS:
+      findAbility(
+        "Wisdom",
+        "WIS"
+      ),
+
+    CHA:
+      findAbility(
+        "Charisma",
+        "CHA"
+      )
+  };
+
+  const baseAbilitySaves = {};
+
+  const abilityDefinitions = {
+    STR: ["str", "strength"],
+    DEX: ["dex", "dexterity"],
+    CON: ["con", "constitution"],
+    INT: ["int", "intelligence"],
+    WIS: ["wis", "wisdom"],
+    CHA: ["cha", "charisma"]
+  };
+
+  Object.entries(
+    abilityDefinitions
+  ).forEach(
+    ([shortName, names]) => {
+      const [code, fullName] =
+        names;
+
+      const ability =
+        baseAbilities[shortName];
+
+      const savingThrow =
+        Array.isArray(
+          pcData?.savingThrows
+        )
+          ? pcData.savingThrows.find(
+              entry => {
+                const entryName =
+                  String(
+                    entry?.name ||
+                    entry?.ability ||
+                    entry?.stat ||
+                    ""
+                  ).toLowerCase();
+
+                return (
+                  entryName === code ||
+                  entryName === fullName
+                );
+              }
+            )
+          : null;
+
+      const directValue =
+        pcData?.[`${code}Save`] ??
+        pcData?.[`${fullName}Save`] ??
+        ability.raw?.save ??
+        ability.raw?.saveModifier ??
+        ability.raw?.savingThrow ??
+        savingThrow?.modifier ??
+        savingThrow?.value ??
+        savingThrow?.bonus;
+
+      const numeric =
+        Number(
+          directValue ??
+          ability.modifier
+        );
+
+      baseAbilitySaves[shortName] =
+        Number.isFinite(numeric)
+          ? numeric
+          : ability.modifier;
+    }
   );
 
-  const spellAttackBonus = highestNumericValue(
-    pcData?.castingInfo?.spellAttacks
+  const overriddenAbilities = {};
+
+  Object.entries(
+    baseAbilities
+  ).forEach(
+    ([abilityName, ability]) => {
+      const score =
+        Math.max(
+          1,
+          Math.round(
+            applyEffects(
+              ability.score,
+              pcEffects[abilityName]
+            )
+          )
+        );
+
+      overriddenAbilities[
+        abilityName
+      ] = {
+        score,
+
+        modifier:
+          Math.floor(
+            (score - 10) / 2
+          )
+      };
+    }
   );
 
-  const proficiency = Number(
-    pcData?.proficiencyBonus ?? 0
+  const overriddenAbilitySaves = {};
+
+  Object.entries(
+    baseAbilitySaves
+  ).forEach(
+    ([abilityName, baseSave]) => {
+      const oldModifier =
+        baseAbilities[abilityName]
+          ?.modifier ?? 0;
+
+      const newModifier =
+        overriddenAbilities[abilityName]
+          ?.modifier ?? oldModifier;
+
+      overriddenAbilitySaves[
+        abilityName
+      ] =
+        Number(baseSave || 0) +
+        (
+          newModifier -
+          oldModifier
+        );
+    }
   );
+
+  const baseArmorClass =
+    Number(
+      token.options?.armorClass ??
+      pcData?.armorClass ??
+      0
+    );
+
+  const baseSpeed =
+    Number(
+      walkingSpeed ??
+      token.options?.speed ??
+      token.options?.speeds?.walk ??
+      token.options?.speeds?.walking ??
+      0
+    );
+
+  const baseMaxHp =
+    Number(
+      hpInfo.maximum ??
+      token.options?.max_hp ??
+      0
+    );
+
+  const armorClass =
+    Math.round(
+      applyEffects(
+        baseArmorClass,
+        pcEffects.armorClass
+      )
+    );
+
+  const speed =
+    Math.max(
+      0,
+      Math.round(
+        applyEffects(
+          baseSpeed,
+          pcEffects.speed
+        )
+      )
+    );
+
+  const maxHp =
+    Math.max(
+      1,
+      Math.round(
+        applyEffects(
+          baseMaxHp,
+          pcEffects.maxHp
+        )
+      )
+    );
+
+  const spellSaveDc =
+    highestNumericValue(
+      pcData?.castingInfo?.saveDcs
+    );
+
+  const spellAttackBonus =
+    highestNumericValue(
+      pcData?.castingInfo
+        ?.spellAttacks
+    );
+
+  const proficiency =
+    Number(
+      pcData?.proficiencyBonus ?? 0
+    );
 
   return {
-    id: tokenId,
-    name: token.options?.name || "Token",
-    itemType: token.options?.itemType || "",
+    id:
+      tokenId,
+
+    name:
+      token.options?.name ||
+      "Token",
+
+    itemType:
+      token.options?.itemType ||
+      "",
 
     hp:
       hpInfo.current ??
       token.options?.hp ??
       null,
 
-    maxHp:
-      hpInfo.maximum ??
-      token.options?.max_hp ??
-      null,
+    maxHp,
 
     tempHp:
       hpInfo.temp ??
       token.options?.temp_hp ??
       0,
 
-    armorClass:
-      token.options?.armorClass ??
-      pcData?.armorClass ??
-      null,
+    armorClass,
 
-    speed:
-      walkingSpeed ??
-      token.options?.speed ??
-      token.options?.speeds?.walk ??
-      token.options?.speeds?.walking ??
-      null,
+    speed,
 
     conditions:
-      token.options?.conditions || [],
+      token.options?.conditions ||
+      [],
 
     customConditions:
-      token.options?.custom_conditions || [],
+      token.options
+        ?.custom_conditions ||
+      [],
 
     deathSaveInfo: {
-      successCount: Number(
-        pcData?.deathSaveInfo?.successCount ?? 0
-      ),
-      failCount: Number(
-        pcData?.deathSaveInfo?.failCount ?? 0
-      )
+      successCount:
+        Number(
+          pcData?.deathSaveInfo
+            ?.successCount ?? 0
+        ),
+
+      failCount:
+        Number(
+          pcData?.deathSaveInfo
+            ?.failCount ?? 0
+        )
     },
 
     spellSaveDc,
@@ -139,29 +469,40 @@ function tokenToState(tokenId, token, pcData = null) {
 
     grappleDc:
       8 +
-      strength.modifier +
+      overriddenAbilities.STR
+        .modifier +
       proficiency,
 
     passivePerception:
-      pcData?.passivePerception ?? null,
+      pcData?.passivePerception ??
+      null,
 
     passiveInsight:
-      pcData?.passiveInsight ?? null,
+      pcData?.passiveInsight ??
+      null,
 
     darkvision:
-      Number(token.options?.vision?.feet || 0),
+      Number(
+        token.options?.vision
+          ?.feet || 0
+      ),
 
-    abilities: {
-      STR: strength,
-      DEX: dexterity,
-      CON: constitution,
-      INT: intelligence,
-      WIS: wisdom,
-      CHA: charisma
-    },
+    abilities:
+      overriddenAbilities,
 
-    cardImage: null,
-    cardImages: null
+    abilitySaves:
+      overriddenAbilitySaves,
+
+    pcEffects:
+      structuredClone(
+        pcEffects
+      ),
+
+    cardImage:
+      null,
+
+    cardImages:
+      null
   };
 }
 
@@ -177,178 +518,531 @@ function loadImageForCanvas(src) {
   });
 }
 
-async function renderPlayerCard(pc, page = "combat") {
-  const canvas = document.createElement("canvas");
+async function renderPlayerCard(
+  pc,
+  page = "combat"
+) {
+  const canvas =
+    document.createElement("canvas");
+
   canvas.width = 144;
   canvas.height = 144;
 
-  const ctx = canvas.getContext("2d");
+  const ctx =
+    canvas.getContext("2d");
 
-  const hp = Number(pc.hp || 0);
-  const maxHp = Number(pc.maxHp || 0);
-  const tempHp = Number(pc.tempHp || 0);
-  const ac = pc.armorClass ?? "?";
-  const speed = pc.speed ?? "?";
+  const hp =
+    Number(pc.hp || 0);
 
-  ctx.fillStyle = "#080808";
-  ctx.fillRect(0, 0, 144, 144);
+  const maxHp =
+    Number(pc.maxHp || 0);
 
-  const name = String(pc.name || "PC");
-  const shortName =
-    name.length > 15
-      ? name.slice(0, 14) + "…"
-      : name;
+  const tempHp =
+    Number(pc.tempHp || 0);
 
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 16px Arial";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "alphabetic";
-  ctx.fillText(shortName, 72, 18);
+  const ac =
+    pc.armorClass ?? "?";
 
-  function drawFooter() {
-    ctx.fillStyle = "#1c1c1c";
+  const speed =
+    pc.speed ?? "?";
 
-    ctx.beginPath();
-    ctx.roundRect(6, 108, 63, 33, 8);
-    ctx.fill();
+  const background =
+    "#EEE6D9";
 
-    ctx.beginPath();
-    ctx.roundRect(75, 108, 63, 33, 8);
-    ctx.fill();
+  const darkText =
+    "#2C2926";
 
-    ctx.fillStyle = "#ffffff";
-    ctx.font =
-      'bold 23px Arial, "Apple Color Emoji"';
+  const mutedText =
+    "#625C56";
 
-    ctx.fillText(`🛡${ac}`, 38, 134);
-    ctx.fillText(`👣${speed}`, 106, 134);
-  }
+  ctx.fillStyle =
+    background;
 
-  function drawDeathCircle(x, y, filled, color) {
-    ctx.beginPath();
-    ctx.arc(x, y, 8, 0, Math.PI * 2);
-
-    if (filled) {
-      ctx.fillStyle = color;
-      ctx.fill();
-    } else {
-      ctx.strokeStyle = "#777777";
-      ctx.lineWidth = 2;
-      ctx.stroke();
-    }
-  }
+  ctx.fillRect(
+    0,
+    0,
+    144,
+    144
+  );
 
   function signedModifier(value) {
-    const number = Number(value || 0);
+    const number =
+      Number(value || 0);
+
     return number >= 0
       ? `+${number}`
       : String(number);
   }
 
-  if (page === "reference") {
-    const values = [
-      ["🔮", pc.spellSaveDc || "—"],
-      ["✨", pc.spellAttackBonus
-        ? signedModifier(pc.spellAttackBonus)
-        : "—"],
-      ["🤼", pc.grappleDc ?? "—"],
-      ["👁", pc.darkvision ?? "—"],
-      ["👂", pc.passivePerception ?? "—"],
-      ["💭", pc.passiveInsight ?? "—"]
-    ];
+  function drawPcName() {
+    ctx.fillStyle =
+      darkText;
 
-    const positions = [
-      [8, 51], [76, 51],
-      [8, 88], [76, 88],
-      [8, 125], [76, 125]
-    ];
+    ctx.textAlign =
+      "center";
 
-    values.forEach(([symbol, value], index) => {
-      const [x, y] = positions[index];
+    ctx.font =
+      "bold 16px Arial";
 
-      ctx.textAlign = "left";
-      ctx.fillStyle = "#ffffff";
-
-      ctx.font =
-        '21px "Apple Color Emoji", Arial';
-
-      ctx.fillText(symbol, x, y);
-
-      ctx.font = "bold 23px Arial";
-
-      ctx.fillText(
-        String(value),
-        x + 31,
-        y
+    const name =
+      String(
+        pc.name || "PC"
       );
-    });
 
-    ctx.textAlign = "center";
-  } else if (page === "abilities") {
-    const abilityRows = [
-      ["STR", "DEX"],
-      ["CON", "INT"],
-      ["WIS", "CHA"]
+    const shortName =
+      name.length > 18
+        ? `${name.slice(0, 17)}…`
+        : name;
+
+    ctx.fillText(
+      shortName,
+      72,
+      16
+    );
+  }
+
+  function drawFooter() {
+    ctx.fillStyle =
+      "#292624";
+
+    ctx.beginPath();
+
+    ctx.roundRect(
+      6,
+      101,
+      63,
+      31,
+      8
+    );
+
+    ctx.fill();
+
+    ctx.beginPath();
+
+    ctx.roundRect(
+      75,
+      101,
+      63,
+      31,
+      8
+    );
+
+    ctx.fill();
+
+    ctx.fillStyle =
+      "#EEE6D9";
+
+    ctx.font =
+      "bold 15px Arial";
+
+    ctx.textAlign =
+      "center";
+
+    ctx.fillText(
+      `🛡️ ${ac}`,
+      38,
+      122
+    );
+
+    ctx.fillText(
+      `🏃 ${speed}`,
+      106,
+      122
+    );
+  }
+
+  function drawDeathCircle(
+    x,
+    y,
+    filled,
+    color
+  ) {
+    ctx.beginPath();
+
+    ctx.arc(
+      x,
+      y,
+      8,
+      0,
+      Math.PI * 2
+    );
+
+    if (filled) {
+      ctx.fillStyle =
+        color;
+
+      ctx.fill();
+    } else {
+      ctx.strokeStyle =
+        "#77716B";
+
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  }
+
+  function drawReferencePage(rows) {
+    const rowY = [
+      31,
+      72,
+      113
     ];
 
-    const rowY = [51, 88, 125];
+    rows.forEach(
+      ([label, value], index) => {
+        const y =
+          rowY[index];
 
-    abilityRows.forEach((pair, rowIndex) => {
-      pair.forEach((abilityName, columnIndex) => {
+        ctx.textAlign =
+          "left";
+
+        ctx.fillStyle =
+          mutedText;
+
+        ctx.font =
+          "bold 15px Arial";
+
+        ctx.fillText(
+          String(label),
+          11,
+          y
+        );
+
+        ctx.textAlign =
+          "right";
+
+        ctx.fillStyle =
+          darkText;
+
+        ctx.font =
+          "bold 27px Arial";
+
+        ctx.fillText(
+          String(value),
+          133,
+          y + 5
+        );
+
+        if (index < 2) {
+          ctx.strokeStyle =
+            "rgba(44, 41, 38, 0.18)";
+
+          ctx.lineWidth = 1;
+
+          ctx.beginPath();
+
+          ctx.moveTo(
+            11,
+            y + 13
+          );
+
+          ctx.lineTo(
+            133,
+            y + 13
+          );
+
+          ctx.stroke();
+        }
+      }
+    );
+
+    ctx.textAlign =
+      "center";
+  }
+
+  function drawAbilityTable(
+    abilityNames,
+    showSaves
+  ) {
+    const physicalPage =
+      abilityNames[0] === "STR";
+
+    const abilityBackground =
+      physicalPage
+        ? "#EEE6D9"
+        : "#D8D9D1";
+
+    const resultBackground =
+      physicalPage
+        ? "#DED3CD"
+        : "#D8D9D1";
+
+    const abilityText =
+      "#292624";
+
+    const resultText =
+      "#292624";
+
+    // Main rounded table background.
+    ctx.fillStyle =
+      abilityBackground;
+
+    ctx.beginPath();
+
+    ctx.roundRect(
+      5,
+      5,
+      134,
+      134,
+      10
+    );
+
+    ctx.fill();
+
+    // MOD/SAVE column background.
+    ctx.save();
+
+    ctx.beginPath();
+
+    ctx.roundRect(
+      5,
+      5,
+      134,
+      134,
+      10
+    );
+
+    ctx.clip();
+
+    ctx.fillStyle =
+      resultBackground;
+
+    ctx.fillRect(
+      94,
+      5,
+      45,
+      134
+    );
+
+    ctx.restore();
+
+    // Table dividers.
+    ctx.strokeStyle =
+      "rgba(41, 38, 36, 0.22)";
+
+    ctx.lineWidth = 1;
+
+    ctx.beginPath();
+    ctx.moveTo(10, 35);
+    ctx.lineTo(134, 35);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(53, 35);
+    ctx.lineTo(53, 134);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(94, 5);
+    ctx.lineTo(94, 134);
+    ctx.stroke();
+
+    // MOD/SAVE centered across the entire table.
+    ctx.fillStyle =
+      resultText;
+
+    ctx.textAlign =
+      "center";
+
+    ctx.font =
+      "bold 14px Arial";
+
+    ctx.fillText(
+      showSaves
+        ? "SAVE"
+        : "MOD",
+      72,
+      24
+    );
+
+    const rowY = [
+      61,
+      96,
+      131
+    ];
+
+    abilityNames.forEach(
+      (abilityName, index) => {
         const ability =
           pc.abilities?.[abilityName] || {
             score: 10,
             modifier: 0
           };
 
-        const x =
-          columnIndex === 0
-            ? 5
-            : 75;
+        const save =
+          pc.abilitySaves?.[abilityName] ??
+          ability.save ??
+          ability.modifier ??
+          0;
 
-        ctx.textAlign = "left";
+        // Ability name.
+        ctx.fillStyle =
+          abilityText;
 
-        ctx.fillStyle = "#bdbdbd";
-        ctx.font = "bold 16px Arial";
+        ctx.textAlign =
+          "left";
+
+        ctx.font =
+          "bold 18px Arial";
 
         ctx.fillText(
           abilityName,
-          x,
-          rowY[rowIndex]
+          12,
+          rowY[index]
         );
 
-        ctx.fillStyle = "#ffffff";
-        ctx.font = "bold 24px Arial";
+        // Ability score.
+        ctx.fillStyle =
+          abilityText;
+
+        ctx.textAlign =
+          "center";
+
+        ctx.font =
+          "bold 22px Arial";
 
         ctx.fillText(
-          signedModifier(ability.modifier),
-          x + 35,
-          rowY[rowIndex]
+          String(
+            ability.score ?? 10
+          ),
+          74,
+          rowY[index]
         );
-      });
-    });
 
-    ctx.textAlign = "center";
-  } else if (hp <= 0 && maxHp > 0) {
-    const successes = Math.max(
-      0,
-      Math.min(
-        3,
-        Number(
-          pc.deathSaveInfo?.successCount || 0
-        )
-      )
+        // Modifier or saving throw.
+        ctx.fillStyle =
+          resultText;
+
+        ctx.textAlign =
+          "center";
+
+        ctx.font =
+          "bold 22px Arial";
+
+        ctx.fillText(
+          signedModifier(
+            showSaves
+              ? save
+              : ability.modifier
+          ),
+          116,
+          rowY[index]
+        );
+
+        if (index < 2) {
+          ctx.strokeStyle =
+            "rgba(41, 38, 36, 0.16)";
+
+          ctx.lineWidth = 1;
+
+          ctx.beginPath();
+
+          ctx.moveTo(
+            10,
+            rowY[index] + 10
+          );
+
+          ctx.lineTo(
+            134,
+            rowY[index] + 10
+          );
+
+          ctx.stroke();
+        }
+      }
     );
 
-    const failures = Math.max(
-      0,
-      Math.min(
-        3,
-        Number(
-          pc.deathSaveInfo?.failCount || 0
-        )
-      )
+    ctx.textAlign =
+      "center";
+  }
+
+  if (page === "reference1") {
+    drawReferencePage([
+      [
+        "SPELL DC",
+        pc.spellSaveDc || "—"
+      ],
+      [
+        "SPELL ATK",
+        pc.spellAttackBonus != null
+          ? signedModifier(
+              pc.spellAttackBonus
+            )
+          : "—"
+      ],
+      [
+        "GRAB. DC",
+        pc.grappleDc ?? "—"
+      ]
+    ]);
+  } else if (page === "reference2") {
+    drawReferencePage([
+      [
+        "DARK VIS.",
+        pc.darkvision ?? "—"
+      ],
+      [
+        "PERCEP.",
+        pc.passivePerception ?? "—"
+      ],
+      [
+        "INSIGHT",
+        pc.passiveInsight ?? "—"
+      ]
+    ]);
+  } else if (
+    page === "abilities1" ||
+    page === "abilities1Save"
+  ) {
+    drawAbilityTable(
+      [
+        "STR",
+        "DEX",
+        "CON"
+      ],
+      page === "abilities1Save"
     );
+  } else if (
+    page === "abilities2" ||
+    page === "abilities2Save"
+  ) {
+    drawAbilityTable(
+      [
+        "INT",
+        "WIS",
+        "CHA"
+      ],
+      page === "abilities2Save"
+    );
+  } else if (
+    hp <= 0 &&
+    maxHp > 0
+  ) {
+    drawPcName();
+
+    const successes =
+      Math.max(
+        0,
+        Math.min(
+          3,
+          Number(
+            pc.deathSaveInfo
+              ?.successCount || 0
+          )
+        )
+      );
+
+    const failures =
+      Math.max(
+        0,
+        Math.min(
+          3,
+          Number(
+            pc.deathSaveInfo
+              ?.failCount || 0
+          )
+        )
+      );
 
     const status =
       failures >= 3
@@ -359,105 +1053,187 @@ async function renderPlayerCard(pc, page = "combat") {
 
     ctx.fillStyle =
       failures >= 3
-        ? "#f85149"
+        ? "#A43030"
         : successes >= 3
-          ? "#58a6ff"
-          : "#f0b429";
+          ? "#356E96"
+          : "#8A621E";
 
-    ctx.font = "bold 18px Arial";
-    ctx.fillText(status, 72, 42);
+    ctx.textAlign =
+      "center";
 
     ctx.font =
-      'bold 21px Arial, "Apple Color Emoji"';
+      "bold 18px Arial";
 
-    ctx.fillStyle = "#3fb950";
-    ctx.fillText("✓", 28, 70);
+    ctx.fillText(
+      status,
+      72,
+      37
+    );
 
-    ctx.fillStyle = "#f85149";
-    ctx.fillText("✕", 28, 97);
+    ctx.font =
+      "bold 20px Arial";
+
+    ctx.fillStyle =
+      "#327A45";
+
+    ctx.fillText(
+      "✓",
+      28,
+      62
+    );
+
+    ctx.fillStyle =
+      "#A43030";
+
+    ctx.fillText(
+      "✕",
+      28,
+      89
+    );
 
     [0, 1, 2].forEach(index => {
-      const x = 56 + index * 27;
+      const x =
+        56 + index * 27;
 
       drawDeathCircle(
         x,
-        64,
+        56,
         index < successes,
-        "#3fb950"
+        "#327A45"
       );
 
       drawDeathCircle(
         x,
-        91,
+        83,
         index < failures,
-        "#f85149"
+        "#A43030"
       );
     });
 
     drawFooter();
   } else {
+    drawPcName();
+
     const pct =
       maxHp > 0
         ? Math.max(
             0,
-            Math.min(1, hp / maxHp)
+            Math.min(
+              1,
+              hp / maxHp
+            )
           )
         : 0;
 
-    let hpColor = "#3fb950";
+    let hpColor =
+      "#3F8A52";
 
     if (pct < 0.25) {
-      hpColor = "#f85149";
+      hpColor =
+        "#A43030";
     } else if (pct < 0.5) {
-      hpColor = "#f0883e";
+      hpColor =
+        "#B6622C";
     } else if (pct < 0.75) {
-      hpColor = "#d29922";
+      hpColor =
+        "#9B751E";
     }
 
-    ctx.fillStyle = "#2b2b2b";
-    ctx.beginPath();
-    ctx.roundRect(8, 27, 128, 24, 12);
-    ctx.fill();
+    ctx.fillStyle =
+      "#CFC6B9";
 
-    ctx.fillStyle = hpColor;
     ctx.beginPath();
+
     ctx.roundRect(
       8,
-      27,
-      Math.max(6, Math.round(128 * pct)),
       24,
-      12
+      128,
+      23,
+      11
     );
+
+    ctx.fill();
+
+    ctx.fillStyle =
+      hpColor;
+
+    ctx.beginPath();
+
+    ctx.roundRect(
+      8,
+      24,
+      Math.max(
+        6,
+        Math.round(
+          128 * pct
+        )
+      ),
+      23,
+      11
+    );
+
     ctx.fill();
 
     if (tempHp > 0) {
-      ctx.strokeStyle = "#58c7f3";
+      ctx.strokeStyle =
+        "#357D98";
+
       ctx.lineWidth = 3;
+
       ctx.beginPath();
-      ctx.roundRect(6, 25, 132, 28, 14);
+
+      ctx.roundRect(
+        6,
+        22,
+        132,
+        27,
+        13
+      );
+
       ctx.stroke();
     }
 
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 30px Arial";
+    ctx.fillStyle =
+      darkText;
+
+    ctx.textAlign =
+      "center";
+
+    ctx.font =
+      "bold 30px Arial";
+
     ctx.fillText(
       `${hp}/${maxHp}`,
       72,
-      86
+      82
     );
 
     if (tempHp > 0) {
-      ctx.fillStyle = "#58c7f3";
-      ctx.font = "bold 13px Arial";
+      ctx.fillStyle =
+        "#286B83";
+
+      ctx.font =
+        "bold 12px Arial";
+
       ctx.fillText(
         `+${tempHp} TEMP`,
         72,
-        102
+        97
       );
     }
 
     drawFooter();
   }
+
+  const pagePixel = {
+    combat: 0,
+    reference1: 1,
+    reference2: 2,
+    abilities1: 3,
+    abilities2: 4,
+    abilities1Save: 5,
+    abilities2Save: 6
+  };
 
   ctx.fillStyle =
     `rgba(${hp % 255}, ` +
@@ -465,17 +1241,15 @@ async function renderPlayerCard(pc, page = "combat") {
     `${tempHp % 255}, 0.01)`;
 
   ctx.fillRect(
-    page === "reference"
-      ? 1
-      : page === "abilities"
-        ? 2
-        : 0,
+    pagePixel[page] ?? 0,
     0,
     1,
     1
   );
 
-  return canvas.toDataURL("image/png");
+  return canvas.toDataURL(
+    "image/png"
+  );
 }
 async function getCombatState() {
   const selectedTokenId =
@@ -535,16 +1309,40 @@ async function getCombatState() {
           "combat"
         ),
 
-      reference:
+      reference1:
         await renderPlayerCard(
           pc,
-          "reference"
+          "reference1"
         ),
 
-      abilities:
+      reference2:
         await renderPlayerCard(
           pc,
-          "abilities"
+          "reference2"
+        ),
+
+      abilities1:
+        await renderPlayerCard(
+          pc,
+          "abilities1"
+        ),
+
+      abilities2:
+        await renderPlayerCard(
+          pc,
+          "abilities2"
+        ),
+
+      abilities1Save:
+        await renderPlayerCard(
+          pc,
+          "abilities1Save"
+        ),
+
+      abilities2Save:
+        await renderPlayerCard(
+          pc,
+          "abilities2Save"
         )
     };
 
@@ -581,16 +1379,40 @@ async function getCombatState() {
           "combat"
         ),
 
-      reference:
+      reference1:
         await renderPlayerCard(
           selectedTokenState,
-          "reference"
+          "reference1"
         ),
 
-      abilities:
+      reference2:
         await renderPlayerCard(
           selectedTokenState,
-          "abilities"
+          "reference2"
+        ),
+
+      abilities1:
+        await renderPlayerCard(
+          selectedTokenState,
+          "abilities1"
+        ),
+
+      abilities2:
+        await renderPlayerCard(
+          selectedTokenState,
+          "abilities2"
+        ),
+
+      abilities1Save:
+        await renderPlayerCard(
+          selectedTokenState,
+          "abilities1Save"
+        ),
+
+      abilities2Save:
+        await renderPlayerCard(
+          selectedTokenState,
+          "abilities2Save"
         )
     };
 
@@ -708,6 +1530,761 @@ setInterval(async () => {
   }
 }, 1000);
 
+
+
+const AVTT_ROLL_POPUP_STYLE_ID =
+  "avtt-roll-popup-style";
+
+const AVTT_ROLL_POPUP_CONTAINER_ID =
+  "avtt-roll-popup-container";
+
+const AVTT_ROLL_POPUP_DURATION_MS = 6000;
+const AVTT_ROLL_POPUP_MAX_CARDS = 4;
+
+const avttRecentRollPopupSignatures =
+  new Map();
+
+const avttRollPopupEntrySignatures =
+  new WeakMap();
+
+const avttRollPopupEntryTimers =
+  new WeakMap();
+
+function avttIsVisibleElement(element) {
+  if (!element) return false;
+
+  const style =
+    window.getComputedStyle(element);
+
+  if (
+    style.display === "none" ||
+    style.visibility === "hidden" ||
+    Number(style.opacity || 1) === 0
+  ) {
+    return false;
+  }
+
+  const rect =
+    element.getBoundingClientRect();
+
+  return (
+    rect.width > 0 &&
+    rect.height > 0 &&
+    rect.bottom > 0 &&
+    rect.right > 0 &&
+    rect.top < window.innerHeight &&
+    rect.left < window.innerWidth
+  );
+}
+
+function avttIsGameLogOpen() {
+  const tab =
+    document.querySelector("#switch_gamelog");
+
+  if (
+    !tab?.classList.contains("selected-tab")
+  ) {
+    return false;
+  }
+
+  const gameLogPanel =
+    document.querySelector(
+      "[class*='GameLogContainer']"
+    );
+
+  return avttIsVisibleElement(
+    gameLogPanel
+  );
+}
+
+function avttEnsureRollPopupStyles() {
+  if (
+    document.getElementById(
+      AVTT_ROLL_POPUP_STYLE_ID
+    )
+  ) {
+    return;
+  }
+
+  const style =
+    document.createElement("style");
+
+  style.id =
+    AVTT_ROLL_POPUP_STYLE_ID;
+
+  style.textContent = `
+    #${AVTT_ROLL_POPUP_CONTAINER_ID} {
+      position: fixed;
+      z-index: 999999;
+      display: flex;
+      flex-direction: column-reverse;
+      align-items: flex-end;
+      gap: 10px;
+      width: min(320px, calc(100vw - 32px));
+      pointer-events: none;
+      transition:
+        right 160ms ease,
+        bottom 160ms ease;
+    }
+
+    .avtt-roll-popup-card {
+      box-sizing: border-box;
+      width: 100%;
+      max-width: 320px;
+      padding: 12px 14px;
+      overflow: hidden;
+      color: #ffffff;
+      background:
+        linear-gradient(
+          135deg,
+          rgba(28, 31, 38, 0.97),
+          rgba(12, 14, 18, 0.97)
+        );
+      border:
+        1px solid rgba(255, 255, 255, 0.18);
+      border-left:
+        5px solid #7799cc;
+      border-radius: 9px;
+      box-shadow:
+        0 8px 26px rgba(0, 0, 0, 0.55);
+      font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
+      cursor: pointer;
+      pointer-events: auto;
+      animation:
+        avtt-roll-popup-enter 180ms ease-out;
+    }
+
+    .avtt-roll-popup-card[data-kind="damage"] {
+      border-left-color: #e28a3b;
+    }
+
+    .avtt-roll-popup-card[data-kind="heal"] {
+      border-left-color: #55b877;
+    }
+
+    .avtt-roll-popup-card[data-kind="critical"] {
+      border-left-color: #e45151;
+    }
+
+    .avtt-roll-popup-card[data-kind="save"],
+    .avtt-roll-popup-card[data-kind="check"] {
+      border-left-color: #5d9ee8;
+    }
+
+    .avtt-roll-popup-card.avtt-roll-popup-leaving {
+      opacity: 0;
+      transform: translateX(24px);
+      transition:
+        opacity 180ms ease,
+        transform 180ms ease;
+    }
+
+    .avtt-roll-popup-name {
+      overflow: hidden;
+      color: #d7dce5;
+      font-size: 13px;
+      font-weight: 600;
+      line-height: 1.2;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .avtt-roll-popup-label {
+      margin-top: 4px;
+      overflow: hidden;
+      color: #ffffff;
+      font-size: 16px;
+      font-weight: 700;
+      line-height: 1.25;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .avtt-roll-popup-row {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 6px;
+    }
+
+    .avtt-roll-popup-type {
+      color: #aeb7c5;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      line-height: 1.2;
+      text-transform: uppercase;
+    }
+
+    .avtt-roll-popup-total {
+      color: #ffffff;
+      font-size: 32px;
+      font-weight: 800;
+      line-height: 0.95;
+    }
+
+    @keyframes avtt-roll-popup-enter {
+      from {
+        opacity: 0;
+        transform: translateX(28px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+function avttGetRollPopupContainer() {
+  avttEnsureRollPopupStyles();
+
+  let container =
+    document.getElementById(
+      AVTT_ROLL_POPUP_CONTAINER_ID
+    );
+
+  if (container) {
+    return container;
+  }
+
+  container =
+    document.createElement("div");
+
+  container.id =
+    AVTT_ROLL_POPUP_CONTAINER_ID;
+
+  document.body.appendChild(container);
+
+  avttPositionRollPopupContainer();
+
+  return container;
+}
+
+function avttPositionRollPopupContainer() {
+  const container =
+    document.getElementById(
+      AVTT_ROLL_POPUP_CONTAINER_ID
+    );
+
+  if (!container) return;
+
+  let rightOffset = 22;
+  let bottomOffset = 22;
+
+  const visibleSidePanels = [
+    ...document.querySelectorAll(
+      [
+        ".sidepanel-content",
+        "[class*='sidepanel-content']"
+      ].join(",")
+    )
+  ].filter(avttIsVisibleElement);
+
+  visibleSidePanels.forEach(panel => {
+    const rect =
+      panel.getBoundingClientRect();
+
+    const touchesRightEdge =
+      rect.right >= window.innerWidth - 10;
+
+    if (
+      touchesRightEdge &&
+      rect.width > 160
+    ) {
+      rightOffset = Math.max(
+        rightOffset,
+        window.innerWidth -
+          rect.left +
+          16
+      );
+    }
+  });
+
+  const popupLeft =
+    window.innerWidth -
+    rightOffset -
+    320;
+
+  const popupRight =
+    window.innerWidth -
+    rightOffset;
+
+  const diceElements = [
+    ...document.querySelectorAll(
+      [
+        ".dice-rolling-panel",
+        ".dice-roller",
+        "[class*='dice-rolling-panel']"
+      ].join(",")
+    )
+  ].filter(avttIsVisibleElement);
+
+  diceElements.forEach(element => {
+    const rect =
+      element.getBoundingClientRect();
+
+    const horizontallyOverlaps =
+      rect.right > popupLeft &&
+      rect.left < popupRight;
+
+    const isNearBottom =
+      rect.bottom >
+      window.innerHeight * 0.55;
+
+    if (
+      horizontallyOverlaps &&
+      isNearBottom
+    ) {
+      bottomOffset = Math.max(
+        bottomOffset,
+        window.innerHeight -
+          rect.top +
+          18
+      );
+    }
+  });
+
+  container.style.right =
+    `${Math.round(rightOffset)}px`;
+
+  container.style.bottom =
+    `${Math.round(bottomOffset)}px`;
+}
+
+function avttNormalizeRollPopupLines(entry) {
+  return String(entry?.innerText || "")
+    .split("\n")
+    .map(line => line.trim())
+    .filter(Boolean);
+}
+
+function avttParseRollPopupEntry(entry) {
+  const lines =
+    avttNormalizeRollPopupLines(entry);
+
+  if (lines.length < 3) {
+    return null;
+  }
+
+  const totalIndex =
+    lines.findIndex(line =>
+      /^-?\d+$/.test(line)
+    );
+
+  if (totalIndex < 0) {
+    return null;
+  }
+
+  const total =
+    lines[totalIndex];
+
+  const beforeTotal =
+    lines.slice(0, totalIndex);
+
+  const rollWords = new Set([
+    "ROLL",
+    "CHECK",
+    "SAVE",
+    "TO HIT",
+    "DAMAGE",
+    "HEAL",
+    "INITIATIVE",
+    "RECHARGE"
+  ]);
+
+  const typeIndex =
+    beforeTotal.findIndex(line =>
+      rollWords.has(
+        line.toUpperCase()
+      )
+    );
+
+  if (typeIndex < 0) {
+    return null;
+  }
+
+  const name =
+    beforeTotal[0] ||
+    "Roll";
+
+  const type =
+    beforeTotal[typeIndex] ||
+    "ROLL";
+
+  const ignoredLabels =
+    new Set([
+      "TO: SELF",
+      "TO: EVERYONE",
+      "CUSTOM"
+    ]);
+
+  const possibleLabels =
+    beforeTotal
+      .slice(1, typeIndex)
+      .filter(line =>
+        !ignoredLabels.has(
+          line.toUpperCase()
+        )
+      );
+
+  const label =
+    possibleLabels.join(" ") ||
+    type;
+
+  const upperText =
+    lines.join(" ").toUpperCase();
+
+  let kind =
+    type.toLowerCase()
+      .replace(/\s+/g, "-");
+
+  if (
+    upperText.includes("CRITICAL")
+  ) {
+    kind = "critical";
+  } else if (
+    upperText.includes("DAMAGE")
+  ) {
+    kind = "damage";
+  } else if (
+    upperText.includes("HEAL")
+  ) {
+    kind = "heal";
+  } else if (
+    upperText.includes("SAVE")
+  ) {
+    kind = "save";
+  } else if (
+    upperText.includes("CHECK")
+  ) {
+    kind = "check";
+  }
+
+  return {
+    name,
+    label,
+    type,
+    total,
+    kind,
+    signature:
+      `${name}|${label}|${type}|${total}`
+  };
+}
+
+function avttRemoveRollPopupCard(card) {
+  if (!card?.isConnected) return;
+
+  card.classList.add(
+    "avtt-roll-popup-leaving"
+  );
+
+  window.setTimeout(() => {
+    card.remove();
+  }, 190);
+}
+
+function avttShowRollPopup(data) {
+  if (
+    !data ||
+    avttIsGameLogOpen()
+  ) {
+    return;
+  }
+
+  const now =
+    Date.now();
+
+  for (
+    const [signature, timestamp]
+    of avttRecentRollPopupSignatures
+  ) {
+    if (now - timestamp > 2500) {
+      avttRecentRollPopupSignatures.delete(
+        signature
+      );
+    }
+  }
+
+  const recentTimestamp =
+    avttRecentRollPopupSignatures.get(
+      data.signature
+    );
+
+  if (
+    recentTimestamp &&
+    now - recentTimestamp < 1200
+  ) {
+    return;
+  }
+
+  avttRecentRollPopupSignatures.set(
+    data.signature,
+    now
+  );
+
+  const container =
+    avttGetRollPopupContainer();
+
+  avttPositionRollPopupContainer();
+
+  const card =
+    document.createElement("div");
+
+  card.className =
+    "avtt-roll-popup-card";
+
+  card.dataset.kind =
+    data.kind;
+
+  const name =
+    document.createElement("div");
+
+  name.className =
+    "avtt-roll-popup-name";
+
+  name.textContent =
+    data.name;
+
+  const label =
+    document.createElement("div");
+
+  label.className =
+    "avtt-roll-popup-label";
+
+  label.textContent =
+    data.label;
+
+  const row =
+    document.createElement("div");
+
+  row.className =
+    "avtt-roll-popup-row";
+
+  const type =
+    document.createElement("div");
+
+  type.className =
+    "avtt-roll-popup-type";
+
+  type.textContent =
+    data.type;
+
+  const total =
+    document.createElement("div");
+
+  total.className =
+    "avtt-roll-popup-total";
+
+  total.textContent =
+    data.total;
+
+  row.append(type, total);
+  card.append(name, label, row);
+
+  card.addEventListener(
+    "click",
+    () => {
+      window.$?.(
+        "#switch_gamelog"
+      )?.trigger("click");
+
+      avttRemoveRollPopupCard(card);
+    }
+  );
+
+  container.appendChild(card);
+
+  while (
+    container.children.length >
+    AVTT_ROLL_POPUP_MAX_CARDS
+  ) {
+    container.firstElementChild?.remove();
+  }
+
+  window.setTimeout(() => {
+    avttRemoveRollPopupCard(card);
+  }, AVTT_ROLL_POPUP_DURATION_MS);
+}
+
+function avttHandlePossibleRollEntry(
+  entry,
+  initializeOnly = false
+) {
+  if (
+    !(entry instanceof HTMLElement)
+  ) {
+    return;
+  }
+
+  const existingTimer =
+    avttRollPopupEntryTimers.get(entry);
+
+  if (existingTimer) {
+    window.clearTimeout(existingTimer);
+  }
+
+  const timer = window.setTimeout(() => {
+    avttRollPopupEntryTimers.delete(entry);
+
+    const data =
+      avttParseRollPopupEntry(entry);
+
+    if (!data) {
+      return;
+    }
+
+    const previousSignature =
+      avttRollPopupEntrySignatures.get(entry);
+
+    avttRollPopupEntrySignatures.set(
+      entry,
+      data.signature
+    );
+
+    if (initializeOnly) {
+      return;
+    }
+
+    if (
+      previousSignature === data.signature
+    ) {
+      return;
+    }
+
+    avttShowRollPopup(data);
+  }, 500);
+
+  avttRollPopupEntryTimers.set(
+    entry,
+    timer
+  );
+}
+
+function avttGetGameLogEntryFromNode(node) {
+  if (node instanceof Text) {
+    return node.parentElement?.closest?.(
+      "ol[class*='GameLogEntries'] > li"
+    ) || null;
+  }
+
+  if (!(node instanceof HTMLElement)) {
+    return null;
+  }
+
+  if (
+    node.matches(
+      "ol[class*='GameLogEntries'] > li"
+    )
+  ) {
+    return node;
+  }
+
+  return node.closest?.(
+    "ol[class*='GameLogEntries'] > li"
+  ) || null;
+}
+
+function avttScanExistingRollEntries() {
+  document
+    .querySelectorAll(
+      "ol[class*='GameLogEntries'] > li"
+    )
+    .forEach(entry => {
+      avttHandlePossibleRollEntry(
+        entry,
+        true
+      );
+    });
+}
+
+function avttInitializeRollPopups() {
+  avttEnsureRollPopupStyles();
+  avttGetRollPopupContainer();
+  avttScanExistingRollEntries();
+
+  const observer =
+    new MutationObserver(mutations => {
+      const changedEntries =
+        new Set();
+
+      mutations.forEach(mutation => {
+        const targetEntry =
+          avttGetGameLogEntryFromNode(
+            mutation.target
+          );
+
+        if (targetEntry) {
+          changedEntries.add(targetEntry);
+        }
+
+        mutation.addedNodes.forEach(node => {
+          const addedEntry =
+            avttGetGameLogEntryFromNode(node);
+
+          if (addedEntry) {
+            changedEntries.add(addedEntry);
+          }
+
+          if (
+            node instanceof HTMLElement
+          ) {
+            node
+              .querySelectorAll?.(
+                "ol[class*='GameLogEntries'] > li"
+              )
+              .forEach(entry => {
+                changedEntries.add(entry);
+              });
+          }
+        });
+      });
+
+      changedEntries.forEach(entry => {
+        avttHandlePossibleRollEntry(
+          entry,
+          false
+        );
+      });
+    });
+
+  observer.observe(
+    document.documentElement,
+    {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true
+    }
+  );
+
+  window.addEventListener(
+    "resize",
+    avttPositionRollPopupContainer
+  );
+
+  window.setInterval(
+    avttPositionRollPopupContainer,
+    1000
+  );
+
+  console.log(
+    "AVTT roll popup observer initialized"
+  );
+}
+
+window.setTimeout(
+  avttInitializeRollPopups,
+  2500
+);
 
 const AVTT_BUILT_IN_CONDITIONS = new Set([
   "Blinded",
@@ -1400,6 +2977,306 @@ window.addEventListener("message", (event) => {
     window.diceRoller.roll(diceRoll);
   }
 });
+
+function avttFindCharacterSheetFrame() {
+  return [
+    ...document.querySelectorAll("iframe")
+  ].find(frame =>
+    String(frame.src || "")
+      .includes("/characters/")
+  ) || null;
+}
+
+function avttSetReactInputValue(
+  input,
+  newValue
+) {
+  if (!input) {
+    throw new Error(
+      "D&D Beyond input was not found"
+    );
+  }
+
+  const frameWindow =
+    input.ownerDocument.defaultView;
+
+  const oldValue =
+    input.value;
+
+  const prototype =
+    Object.getPrototypeOf(input);
+
+  const valueSetter =
+    Object.getOwnPropertyDescriptor(
+      prototype,
+      "value"
+    )?.set;
+
+  if (!valueSetter) {
+    throw new Error(
+      "D&D Beyond input value setter was not found"
+    );
+  }
+
+  input.focus();
+
+  valueSetter.call(
+    input,
+    String(newValue)
+  );
+
+  const tracker =
+    input._valueTracker;
+
+  if (tracker) {
+    tracker.setValue(oldValue);
+  }
+
+  input.dispatchEvent(
+    new frameWindow.InputEvent(
+      "input",
+      {
+        bubbles: true,
+        inputType: "insertText",
+        data: String(newValue)
+      }
+    )
+  );
+
+  input.dispatchEvent(
+    new frameWindow.Event(
+      "change",
+      {
+        bubbles: true
+      }
+    )
+  );
+
+  input.dispatchEvent(
+    new frameWindow.KeyboardEvent(
+      "keydown",
+      {
+        key: "Enter",
+        code: "Enter",
+        bubbles: true
+      }
+    )
+  );
+
+  input.dispatchEvent(
+    new frameWindow.KeyboardEvent(
+      "keyup",
+      {
+        key: "Enter",
+        code: "Enter",
+        bubbles: true
+      }
+    )
+  );
+
+  input.blur();
+
+  return input.value;
+}
+
+function avttFindDdbCustomizeRow(
+  documentObject,
+  label
+) {
+  return [
+    ...documentObject.querySelectorAll(
+      ".ct-value-editor__property"
+    )
+  ].find(row =>
+    String(
+      row.querySelector(
+        ".ct-value-editor__property-label"
+      )?.textContent || ""
+    ).trim() === label
+  ) || null;
+}
+
+function avttApplyNumberOperation(
+  currentValue,
+  operation,
+  amount
+) {
+  const current =
+    Number(currentValue || 0);
+
+  switch (operation) {
+    case "add":
+      return current + amount;
+
+    case "subtract":
+      return current - amount;
+
+    case "multiply":
+      return current * amount;
+
+    case "divide":
+      if (amount === 0) {
+        throw new Error(
+          "Cannot divide by zero"
+        );
+      }
+
+      return current / amount;
+
+    case "set":
+    default:
+      return amount;
+  }
+}
+
+function avttEditOpenDdbAcField({
+  fieldLabel,
+  operation,
+  value,
+  sourceNote
+}) {
+  const frame =
+    avttFindCharacterSheetFrame();
+
+  const documentObject =
+    frame?.contentDocument;
+
+  if (!frame || !documentObject) {
+    throw new Error(
+      "Open the selected PC character sheet first"
+    );
+  }
+
+  const row =
+    avttFindDdbCustomizeRow(
+      documentObject,
+      fieldLabel
+    );
+
+  if (!row) {
+    throw new Error(
+      `Open Armor Class and expand Customize. Field not found: ${fieldLabel}`
+    );
+  }
+
+  const valueInput =
+    row.querySelector(
+      ".ct-value-editor__property-value input"
+    );
+
+  const sourceInput =
+    row.querySelector(
+      ".ct-value-editor__property-source input"
+    );
+
+  if (!valueInput) {
+    throw new Error(
+      `Value input not found for: ${fieldLabel}`
+    );
+  }
+
+  const nextValue =
+    avttApplyNumberOperation(
+      valueInput.value,
+      operation,
+      Number(value)
+    );
+
+  avttSetReactInputValue(
+    valueInput,
+    nextValue
+  );
+
+  if (sourceInput) {
+    avttSetReactInputValue(
+      sourceInput,
+      sourceNote || ""
+    );
+  }
+
+  return {
+    fieldLabel,
+    operation,
+    previousValue:
+      valueInput.dataset
+        ?.avttPreviousValue ?? null,
+    value:
+      valueInput.value,
+    sourceNote:
+      sourceInput?.value || ""
+  };
+}
+
+function avttGetFreshCobaltToken() {
+  return new Promise(
+    (resolve, reject) => {
+      if (
+        typeof window.get_cobalt_token !==
+        "function"
+      ) {
+        reject(
+          new Error(
+            "AboveVTT get_cobalt_token() was not found"
+          )
+        );
+        return;
+      }
+
+      let finished = false;
+
+      const timeout =
+        window.setTimeout(() => {
+          if (finished) return;
+
+          finished = true;
+
+          reject(
+            new Error(
+              "Timed out requesting D&D Beyond authentication"
+            )
+          );
+        }, 15000);
+
+      try {
+        window.get_cobalt_token(
+          token => {
+            if (finished) return;
+
+            finished = true;
+
+            window.clearTimeout(
+              timeout
+            );
+
+            if (
+              typeof token !== "string" ||
+              token.length < 100
+            ) {
+              reject(
+                new Error(
+                  "AboveVTT returned an invalid cobalt token"
+                )
+              );
+              return;
+            }
+
+            resolve(token);
+          }
+        );
+      } catch (error) {
+        if (finished) return;
+
+        finished = true;
+
+        window.clearTimeout(
+          timeout
+        );
+
+        reject(error);
+      }
+    }
+  );
+}
 
 window.addEventListener("message", (event) => {
   if (event.data?.type !== "AVTT_BRIDGE_COMMAND") return;
@@ -2202,6 +4079,577 @@ window.addEventListener("message", (event) => {
     return;
   }
 
+  if (
+    cmd.command === "applyPcStatEffect" &&
+    String(cmd.stat || "") === "armorClass"
+  ) {
+    void (async () => {
+      try {
+        const selectedTokenId =
+          Array.isArray(
+            CURRENTLY_SELECTED_TOKENS
+          )
+            ? CURRENTLY_SELECTED_TOKENS[0]
+            : null;
+
+        const selectedToken =
+          selectedTokenId
+            ? window.TOKEN_OBJECTS?.[
+                selectedTokenId
+              ]
+            : null;
+
+        if (!selectedToken) {
+          throw new Error(
+            "Select a PC token first"
+          );
+        }
+
+        if (
+          selectedToken.options?.itemType !==
+            "pc"
+        ) {
+          throw new Error(
+            "The selected token is not a PC"
+          );
+        }
+
+        const characterId =
+          Number(
+            selectedToken.options?.characterId
+          );
+
+        if (
+          !Number.isFinite(characterId) ||
+          characterId <= 0
+        ) {
+          throw new Error(
+            "The selected PC has no valid character ID"
+          );
+        }
+
+        const fieldTypeIds = {
+          "Override AC": 1,
+          "Additional Magic Bonus": 2,
+          "Additional Misc Bonus": 3,
+          "Override Base Armor + DEX": 4
+        };
+
+        const fieldLabel =
+          Object.hasOwn(
+            fieldTypeIds,
+            cmd.acField
+          )
+            ? cmd.acField
+            : "Override AC";
+
+        const typeId =
+          fieldTypeIds[fieldLabel];
+
+        const requestedValue =
+          Number(cmd.value);
+
+        if (!Number.isFinite(requestedValue)) {
+          throw new Error(
+            `Invalid AC value: ${cmd.value}`
+          );
+        }
+
+        const operation =
+          String(
+            cmd.operation || "set"
+          );
+
+        let apiValue =
+          requestedValue;
+
+        /*
+         * For Override AC, mathematical operations use the
+         * PC token's currently synchronized total AC.
+         *
+         * For the bonus fields, the configured number is
+         * written directly into that bonus field.
+         */
+        if (
+          fieldLabel === "Override AC" &&
+          operation !== "set"
+        ) {
+          const currentAc =
+            Number(
+              selectedToken.options
+                ?.armorClass ?? 0
+            );
+
+          if (!Number.isFinite(currentAc)) {
+            throw new Error(
+              "The selected PC has no valid current AC"
+            );
+          }
+
+          switch (operation) {
+            case "add":
+              apiValue =
+                currentAc +
+                requestedValue;
+              break;
+
+            case "subtract":
+              apiValue =
+                currentAc -
+                requestedValue;
+              break;
+
+            case "multiply":
+              apiValue =
+                currentAc *
+                requestedValue;
+              break;
+
+            case "divide":
+              if (requestedValue === 0) {
+                throw new Error(
+                  "Cannot divide AC by zero"
+                );
+              }
+
+              apiValue =
+                currentAc /
+                requestedValue;
+              break;
+
+            default:
+              apiValue =
+                requestedValue;
+          }
+        }
+
+        apiValue =
+          Math.round(apiValue);
+
+        const payload = {
+          characterId,
+          typeId,
+          value:
+            apiValue,
+          notes:
+            String(
+              cmd.effectName || ""
+            ),
+          valueId:
+            null,
+          valueTypeId:
+            null,
+          contextId:
+            null,
+          contextTypeId:
+            null,
+          partyId:
+            null
+        };
+
+        const cobaltToken =
+          await avttGetFreshCobaltToken();
+
+        console.log(
+          "applyPcStatEffect: obtained cobalt token",
+          {
+            tokenLength:
+              cobaltToken.length
+          }
+        );
+
+        const response =
+          await fetch(
+            "https://character-service.dndbeyond.com/character/v5/custom/value",
+            {
+              method:
+                "PUT",
+
+              credentials:
+                "include",
+
+              headers: {
+                "Accept":
+                  "application/json, text/plain, */*",
+
+                "Authorization":
+                  `Bearer ${cobaltToken}`,
+
+                "Content-Type":
+                  "application/json"
+              },
+
+              body:
+                JSON.stringify(payload)
+            }
+          );
+
+        const responseText =
+          await response.text();
+
+        if (!response.ok) {
+          throw new Error(
+            `D&D Beyond returned ${response.status}: ` +
+            responseText.slice(0, 500)
+          );
+        }
+
+        console.log(
+          "applyPcStatEffect: direct D&D Beyond AC update succeeded",
+          {
+            character:
+              selectedToken.options?.name,
+            characterId,
+            fieldLabel,
+            typeId,
+            operation,
+            requestedValue,
+            apiValue,
+            notes:
+              payload.notes,
+            status:
+              response.status,
+            response:
+              responseText.slice(0, 500)
+          }
+        );
+
+        /*
+         * Ask AboveVTT to refresh the character after the
+         * server has had time to store the customization.
+         */
+        setTimeout(() => {
+          window.update_pc_with_api_call?.(
+            String(characterId)
+          );
+        }, 750);
+
+        setTimeout(() => {
+          window.update_pc_with_api_call?.(
+            String(characterId)
+          );
+        }, 2500);
+      } catch (error) {
+        console.error(
+          "applyPcStatEffect: direct D&D Beyond AC update failed",
+          error
+        );
+      }
+    })();
+
+    return;
+  }
+
+  if (cmd.command === "applyPcStatEffect") {
+    const aliases = {
+      ac: "armorClass",
+      armorclass: "armorClass",
+      speed: "speed",
+      movement: "speed",
+      maxhp: "maxHp",
+      maximumhp: "maxHp",
+      str: "STR",
+      strength: "STR",
+      dex: "DEX",
+      dexterity: "DEX",
+      con: "CON",
+      constitution: "CON",
+      int: "INT",
+      intelligence: "INT",
+      wis: "WIS",
+      wisdom: "WIS",
+      cha: "CHA",
+      charisma: "CHA"
+    };
+
+    const rawStat =
+      String(cmd.stat || "")
+        .trim();
+
+    const stat =
+      aliases[rawStat.toLowerCase()] ||
+      rawStat;
+
+    const validStats =
+      new Set([
+        "armorClass",
+        "speed",
+        "maxHp",
+        "STR",
+        "DEX",
+        "CON",
+        "INT",
+        "WIS",
+        "CHA"
+      ]);
+
+    if (!validStats.has(stat)) {
+      console.warn(
+        "applyPcStatEffect: invalid stat",
+        stat
+      );
+      return;
+    }
+
+    const operation =
+      String(cmd.operation || "add");
+
+    const validOperations =
+      new Set([
+        "add",
+        "subtract",
+        "multiply",
+        "divide",
+        "set"
+      ]);
+
+    if (!validOperations.has(operation)) {
+      console.warn(
+        "applyPcStatEffect: invalid operation",
+        operation
+      );
+      return;
+    }
+
+    const value =
+      Number(cmd.value);
+
+    if (!Number.isFinite(value)) {
+      console.warn(
+        "applyPcStatEffect: invalid value",
+        cmd.value
+      );
+      return;
+    }
+
+    if (
+      operation === "divide" &&
+      value === 0
+    ) {
+      console.warn(
+        "applyPcStatEffect: cannot divide by zero"
+      );
+      return;
+    }
+
+    const effectName =
+      String(
+        cmd.effectName ||
+        "Stream Deck Effect"
+      ).trim() ||
+      "Stream Deck Effect";
+
+    const effectId =
+      String(
+        cmd.effectId ||
+        `${stat}:${effectName}`
+      );
+
+    const selectedIds =
+      typeof CURRENTLY_SELECTED_TOKENS !==
+        "undefined" &&
+      Array.isArray(CURRENTLY_SELECTED_TOKENS)
+        ? CURRENTLY_SELECTED_TOKENS
+        : [];
+
+    console.log(
+      "applyPcStatEffect: selected IDs",
+      selectedIds
+    );
+
+    let changed = 0;
+
+    selectedIds.forEach(tokenId => {
+      const token =
+        window.TOKEN_OBJECTS?.[tokenId];
+
+      if (!token) {
+        console.warn(
+          "applyPcStatEffect: token not found",
+          tokenId
+        );
+        return;
+      }
+
+      if (
+        token.options?.itemType !== "pc"
+      ) {
+        console.warn(
+          "applyPcStatEffect: selected token is not a PC",
+          {
+            tokenId,
+            name: token.options?.name,
+            itemType:
+              token.options?.itemType
+          }
+        );
+        return;
+      }
+
+      const allEffects =
+        token.options.avttPcEffects &&
+        typeof token.options.avttPcEffects ===
+          "object"
+          ? {
+              ...token.options.avttPcEffects
+            }
+          : {};
+
+      const statEffects =
+        Array.isArray(allEffects[stat])
+          ? [
+              ...allEffects[stat]
+            ]
+          : [];
+
+      const nextEffect = {
+        id: effectId,
+        name: effectName,
+        operation,
+        value,
+        updatedAt: Date.now()
+      };
+
+      const existingIndex =
+        statEffects.findIndex(effect =>
+          String(effect?.id || "") ===
+          effectId
+        );
+
+      if (existingIndex >= 0) {
+        statEffects[existingIndex] =
+          nextEffect;
+      } else {
+        statEffects.push(
+          nextEffect
+        );
+      }
+
+      allEffects[stat] =
+        statEffects;
+
+      token.options.avttPcEffects =
+        allEffects;
+
+      token.place_sync_persist();
+
+      changed += 1;
+    });
+
+    console.log(
+      "applyPcStatEffect:",
+      {
+        stat,
+        operation,
+        value,
+        effectName,
+        effectId,
+        changed
+      }
+    );
+
+    return;
+  }
+
+  if (cmd.command === "clearPcStatEffects") {
+    const aliases = {
+      ac: "armorClass",
+      armorclass: "armorClass",
+      speed: "speed",
+      movement: "speed",
+      maxhp: "maxHp",
+      maximumhp: "maxHp",
+      str: "STR",
+      strength: "STR",
+      dex: "DEX",
+      dexterity: "DEX",
+      con: "CON",
+      constitution: "CON",
+      int: "INT",
+      intelligence: "INT",
+      wis: "WIS",
+      wisdom: "WIS",
+      cha: "CHA",
+      charisma: "CHA"
+    };
+
+    const rawStat =
+      String(cmd.stat || "")
+        .trim();
+
+    const stat =
+      aliases[rawStat.toLowerCase()] ||
+      rawStat;
+
+    const scope =
+      cmd.scope === "all"
+        ? "all"
+        : "stat";
+
+    const selectedIds =
+      typeof CURRENTLY_SELECTED_TOKENS !==
+        "undefined" &&
+      Array.isArray(CURRENTLY_SELECTED_TOKENS)
+        ? CURRENTLY_SELECTED_TOKENS
+        : [];
+
+    let changed = 0;
+
+    selectedIds.forEach(tokenId => {
+      const token =
+        window.TOKEN_OBJECTS?.[tokenId];
+
+      if (
+        !token ||
+        token.options?.itemType !== "pc"
+      ) {
+        return;
+      }
+
+      if (scope === "all") {
+        delete token.options.avttPcEffects;
+      } else {
+        const allEffects =
+          token.options.avttPcEffects &&
+          typeof token.options.avttPcEffects ===
+            "object"
+            ? {
+                ...token.options.avttPcEffects
+              }
+            : {};
+
+        delete allEffects[stat];
+
+        if (
+          Object.keys(allEffects).length
+        ) {
+          token.options.avttPcEffects =
+            allEffects;
+        } else {
+          delete token.options.avttPcEffects;
+        }
+      }
+
+      token.place_sync_persist();
+
+      changed += 1;
+    });
+
+    console.log(
+      "clearPcStatEffects:",
+      {
+        scope,
+        stat:
+          scope === "all"
+            ? null
+            : stat,
+        changed
+      }
+    );
+
+    return;
+  }
+
   if (cmd.command === "toggleCondition") {
     const mode = cmd.mode || "condition";
     const condition = String(cmd.condition || "Prone");
@@ -2259,6 +4707,27 @@ window.addEventListener("message", (event) => {
         const characterId =
           String(token.options.characterId);
 
+        const ddbConditions = new Set([
+          "blinded",
+          "charmed",
+          "deafened",
+          "exhaustion",
+          "frightened",
+          "grappled",
+          "incapacitated",
+          "invisible",
+          "paralyzed",
+          "petrified",
+          "poisoned",
+          "prone",
+          "restrained",
+          "stunned",
+          "unconscious"
+        ]);
+
+        const conditionKey =
+          condition.trim().toLowerCase();
+
         const currentConditions = (
           token.options.conditions || []
         ).map(entry => {
@@ -2281,7 +4750,7 @@ window.addEventListener("message", (event) => {
             ? currentConditions.filter(entry =>
                 String(entry.name || "")
                   .toLowerCase() !==
-                condition.toLowerCase()
+                conditionKey
               )
             : [
                 ...currentConditions,
@@ -2296,45 +4765,100 @@ window.addEventListener("message", (event) => {
             ...entry
           }));
 
-        const pc =
-          (window.pcs || []).find(entry =>
-            String(entry.characterId) === characterId ||
-            entry.name === token.options?.name
+        if (ddbConditions.has(conditionKey)) {
+          const pcConditions =
+            nextConditions.filter(entry =>
+              ddbConditions.has(
+                String(entry.name || "")
+                  .toLowerCase()
+              )
+            );
+
+          const pc =
+            (window.pcs || []).find(entry =>
+              String(entry.characterId) ===
+                characterId ||
+              entry.name === token.options?.name
+            );
+
+          if (pc) {
+            pc.conditions =
+              pcConditions.map(entry => ({
+                ...entry
+              }));
+          }
+
+          window.update_pc_with_data?.(
+            characterId,
+            {
+              conditions:
+                pcConditions.map(entry => ({
+                  ...entry
+                }))
+            }
           );
 
-        if (pc) {
-          pc.conditions =
-            nextConditions.map(entry => ({
-              ...entry
-            }));
+          console.log(
+            "toggleCondition: updated PC sheet condition",
+            {
+              characterId,
+              token: token.options?.name,
+              condition,
+              active: !hasNativeCondition,
+              conditions: pcConditions
+            }
+          );
+        } else {
+          const currentCustomConditions = [
+            ...(token.options.custom_conditions || [])
+          ];
+
+          const nextCustomConditions =
+            hasCustomCondition
+              ? currentCustomConditions.filter(entry => {
+                  const name =
+                    typeof entry === "string"
+                      ? entry
+                      : entry?.name || entry?.text;
+
+                  return String(name || "")
+                    .toLowerCase() !==
+                    conditionKey;
+                })
+              : [
+                  ...currentCustomConditions,
+                  {
+                    name: condition,
+                    text: ""
+                  }
+                ];
+
+          token.options.custom_conditions =
+            nextCustomConditions.map(entry =>
+              typeof entry === "string"
+                ? {
+                    name: entry,
+                    text: ""
+                  }
+                : {
+                    ...entry
+                  }
+            );
+
+          console.log(
+            "toggleCondition: updated AVTT token condition",
+            {
+              characterId,
+              token: token.options?.name,
+              condition,
+              active: !hasCustomCondition,
+              customConditions:
+                token.options.custom_conditions
+            }
+          );
         }
 
-        window.update_pc_with_data?.(
-          characterId,
-          {
-            conditions:
-              nextConditions.map(entry => ({
-                ...entry
-              }))
-          }
-        );
-
         token.place_sync_persist();
-
-        console.log(
-          "toggleCondition: directly updated PC",
-          {
-            characterId,
-            token:
-              token.options?.name,
-            condition,
-            active:
-              !hasNativeCondition,
-            conditions:
-              nextConditions
-          }
-        );
-
         return;
       }
 
@@ -2547,8 +5071,7 @@ window.addEventListener("message", (event) => {
         window.postMessage({
           type: "AVTT_BRIDGE_ROLL",
           roll
-        }, "*");
-      } catch (err) {
+        }, "*");      } catch (err) {
         console.error("rollSelectedFormula error:", err);
       }
     })();
