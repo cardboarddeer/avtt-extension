@@ -4081,6 +4081,326 @@ window.addEventListener("message", (event) => {
 
   if (
     cmd.command === "applyPcStatEffect" &&
+    String(cmd.stat || "") === "speed"
+  ) {
+    void (async () => {
+      try {
+        const selectedTokenId =
+          Array.isArray(
+            CURRENTLY_SELECTED_TOKENS
+          )
+            ? CURRENTLY_SELECTED_TOKENS[0]
+            : null;
+
+        const selectedToken =
+          selectedTokenId
+            ? window.TOKEN_OBJECTS?.[
+                selectedTokenId
+              ]
+            : null;
+
+        if (!selectedToken) {
+          throw new Error(
+            "Select a PC token first"
+          );
+        }
+
+        if (
+          selectedToken.options?.itemType !==
+            "pc"
+        ) {
+          throw new Error(
+            "The selected token is not a PC"
+          );
+        }
+
+        const characterId =
+          Number(
+            selectedToken.options
+              ?.characterId
+          );
+
+        if (
+          !Number.isFinite(characterId) ||
+          characterId <= 0
+        ) {
+          throw new Error(
+            "The selected PC has no valid character ID"
+          );
+        }
+
+        const requestedValue =
+          Number(cmd.value);
+
+        if (!Number.isFinite(requestedValue)) {
+          throw new Error(
+            `Invalid Speed value: ${cmd.value}`
+          );
+        }
+
+        const operation =
+          String(
+            cmd.operation || "set"
+          );
+
+        const pcData =
+          (window.pcs || []).find(entry =>
+            String(entry.characterId) ===
+              String(characterId) ||
+            entry.name ===
+              selectedToken.options?.name
+          );
+
+        const movementTypeNames = {
+          walking: "walking",
+          burrowing: "burrowing",
+          climbing: "climbing",
+          flying: "flying",
+          swimming: "swimming"
+        };
+
+        const requestedMovementType =
+          Object.hasOwn(
+            movementTypeNames,
+            String(
+              cmd.movementType || ""
+            )
+          )
+            ? String(cmd.movementType)
+            : "walking";
+
+        const currentMovementSpeed =
+          Number(
+            pcData?.speeds?.find(
+              speed =>
+                String(speed?.name || "")
+                  .toLowerCase() ===
+                movementTypeNames[
+                  requestedMovementType
+                ]
+            )?.distance ??
+            (
+              requestedMovementType ===
+                "walking"
+                ? (
+                    selectedToken.options?.speed ??
+                    selectedToken.options?.speeds
+                      ?.walk ??
+                    selectedToken.options?.speeds
+                      ?.walking
+                  )
+                : selectedToken.options?.speeds?.[
+                    requestedMovementType
+                  ]
+            ) ??
+            0
+          );
+
+        if (
+          !Number.isFinite(
+            currentMovementSpeed
+          )
+        ) {
+          throw new Error(
+            `The selected PC has no valid ${requestedMovementType} speed`
+          );
+        }
+
+        let distance =
+          requestedValue;
+
+        switch (operation) {
+          case "add":
+            distance =
+              currentMovementSpeed +
+              requestedValue;
+            break;
+
+          case "subtract":
+            distance =
+              currentMovementSpeed -
+              requestedValue;
+            break;
+
+          case "multiply":
+            distance =
+              currentMovementSpeed *
+              requestedValue;
+            break;
+
+          case "divide":
+            if (requestedValue === 0) {
+              throw new Error(
+                "Cannot divide Walking Speed by zero"
+              );
+            }
+
+            distance =
+              currentMovementSpeed /
+              requestedValue;
+            break;
+
+          case "set":
+          default:
+            distance =
+              requestedValue;
+        }
+
+        distance =
+          Math.max(
+            0,
+            Math.round(distance)
+          );
+
+        const cobaltToken =
+          await avttGetFreshCobaltToken();
+
+        console.log(
+          "applyPcStatEffect: obtained cobalt token for Movement Speed",
+          {
+            tokenLength:
+              cobaltToken.length
+          }
+        );
+
+        const movementTypes = {
+          walking: {
+            id: 1,
+            name: "Walking"
+          },
+
+          burrowing: {
+            id: 2,
+            name: "Burrowing"
+          },
+
+          climbing: {
+            id: 3,
+            name: "Climbing"
+          },
+
+          flying: {
+            id: 4,
+            name: "Flying"
+          },
+
+          swimming: {
+            id: 5,
+            name: "Swimming"
+          }
+        };
+
+        const movementTypeKey =
+          Object.hasOwn(
+            movementTypes,
+            String(
+              cmd.movementType || ""
+            )
+          )
+            ? String(cmd.movementType)
+            : "walking";
+
+        const movementType =
+          movementTypes[
+            movementTypeKey
+          ];
+
+        const payload = {
+          characterId,
+          movementId:
+            movementType.id,
+          distance,
+          source:
+            String(
+              cmd.effectName || ""
+            ) || null
+        };
+
+        const response =
+          await fetch(
+            "https://character-service.dndbeyond.com/character/v5/custom/movement",
+            {
+              method:
+                "PUT",
+
+              credentials:
+                "include",
+
+              headers: {
+                "Accept":
+                  "application/json, text/plain, */*",
+
+                "Authorization":
+                  `Bearer ${cobaltToken}`,
+
+                "Content-Type":
+                  "application/json"
+              },
+
+              body:
+                JSON.stringify(payload)
+            }
+          );
+
+        const responseText =
+          await response.text();
+
+        if (!response.ok) {
+          throw new Error(
+            `D&D Beyond returned ${response.status}: ` +
+            responseText.slice(0, 500)
+          );
+        }
+
+        console.log(
+          "applyPcStatEffect: direct D&D Beyond Movement Speed update succeeded",
+          {
+            character:
+              selectedToken.options?.name,
+            characterId,
+            movementId:
+              1,
+            operation,
+            movementType:
+              movementType.name,
+            movementId:
+              movementType.id,
+            currentMovementSpeed,
+            requestedValue,
+            distance,
+            source:
+              payload.source,
+            status:
+              response.status,
+            response:
+              responseText.slice(0, 500)
+          }
+        );
+
+        setTimeout(() => {
+          window.update_pc_with_api_call?.(
+            String(characterId)
+          );
+        }, 750);
+
+        setTimeout(() => {
+          window.update_pc_with_api_call?.(
+            String(characterId)
+          );
+        }, 2500);
+      } catch (error) {
+        console.error(
+          "applyPcStatEffect: direct D&D Beyond Movement Speed update failed",
+          error
+        );
+      }
+    })();
+
+    return;
+  }
+
+  if (
+    cmd.command === "applyPcStatEffect" &&
     String(cmd.stat || "") === "armorClass"
   ) {
     void (async () => {
