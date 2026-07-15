@@ -3278,11 +3278,1198 @@ function avttGetFreshCobaltToken() {
   );
 }
 
+
+function avttGetSelectedPcContext() {
+  const selectedTokenId =
+    Array.isArray(
+      CURRENTLY_SELECTED_TOKENS
+    )
+      ? CURRENTLY_SELECTED_TOKENS[0]
+      : null;
+
+  const selectedToken =
+    selectedTokenId
+      ? window.TOKEN_OBJECTS?.[
+          selectedTokenId
+        ]
+      : null;
+
+  if (!selectedToken) {
+    throw new Error(
+      "Select a PC token first"
+    );
+  }
+
+  if (
+    selectedToken.options?.itemType !==
+      "pc"
+  ) {
+    throw new Error(
+      "The selected token is not a PC"
+    );
+  }
+
+  const characterId =
+    Number(
+      selectedToken.options
+        ?.characterId
+    );
+
+  if (
+    !Number.isFinite(characterId) ||
+    characterId <= 0
+  ) {
+    throw new Error(
+      "The selected PC has no valid character ID"
+    );
+  }
+
+  const pcData =
+    (window.pcs || []).find(entry =>
+      String(entry.characterId) ===
+        String(characterId) ||
+      entry.name ===
+        selectedToken.options?.name
+    ) || null;
+
+  return {
+    selectedTokenId,
+    selectedToken,
+    characterId,
+    pcData
+  };
+}
+
+function avttApplyNumericOperation({
+  currentValue,
+  operation,
+  requestedValue,
+  label
+}) {
+  const current =
+    Number(currentValue);
+
+  const requested =
+    Number(requestedValue);
+
+  if (!Number.isFinite(requested)) {
+    throw new Error(
+      `Invalid ${label} value: ${requestedValue}`
+    );
+  }
+
+  if (
+    operation !== "set" &&
+    !Number.isFinite(current)
+  ) {
+    throw new Error(
+      `The selected PC has no valid current ${label}`
+    );
+  }
+
+  switch (operation) {
+    case "add":
+      return current + requested;
+
+    case "subtract":
+      return current - requested;
+
+    case "multiply":
+      return current * requested;
+
+    case "divide":
+      if (requested === 0) {
+        throw new Error(
+          `Cannot divide ${label} by zero`
+        );
+      }
+
+      return current / requested;
+
+    case "set":
+    default:
+      return requested;
+  }
+}
+
+async function avttDdbCharacterRequest({
+  url,
+  method = "PUT",
+  payload
+}) {
+  const cobaltToken =
+    await avttGetFreshCobaltToken();
+
+  const response =
+    await fetch(
+      url,
+      {
+        method,
+
+        credentials:
+          "include",
+
+        headers: {
+          "Accept":
+            "application/json, text/plain, */*",
+
+          "Authorization":
+            `Bearer ${cobaltToken}`,
+
+          "Content-Type":
+            "application/json"
+        },
+
+        body:
+          JSON.stringify(payload)
+      }
+    );
+
+  const responseText =
+    await response.text();
+
+  if (!response.ok) {
+    throw new Error(
+      `D&D Beyond returned ${response.status}: ` +
+      responseText.slice(
+        0,
+        500
+      )
+    );
+  }
+
+  return {
+    status:
+      response.status,
+
+    responseText
+  };
+}
+
+function avttRefreshDdbCharacter(
+  characterId
+) {
+  window.setTimeout(
+    () => {
+      window.update_pc_with_api_call?.(
+        String(characterId)
+      );
+    },
+    750
+  );
+
+  window.setTimeout(
+    () => {
+      window.update_pc_with_api_call?.(
+        String(characterId)
+      );
+    },
+    2500
+  );
+}
+
+async function avttApplyArmorClassEffect(
+  cmd
+) {
+  const {
+    selectedToken,
+    characterId
+  } =
+    avttGetSelectedPcContext();
+
+  const fieldTypeIds = {
+    "Override AC": 1,
+    "Additional Magic Bonus": 2,
+    "Additional Misc Bonus": 3,
+    "Override Base Armor + DEX": 4
+  };
+
+  const fieldLabel =
+    Object.hasOwn(
+      fieldTypeIds,
+      cmd.acField
+    )
+      ? cmd.acField
+      : "Override AC";
+
+  const typeId =
+    fieldTypeIds[fieldLabel];
+
+  const requestedValue =
+    Number(cmd.value);
+
+  const operation =
+    String(
+      cmd.operation || "set"
+    );
+
+  let apiValue =
+    requestedValue;
+
+  /*
+   * Mathematical operations on Override AC use the
+   * currently synchronized total AC.
+   *
+   * Bonus fields are direct values, because AboveVTT
+   * currently does not expose each individual custom
+   * bonus field separately.
+   */
+  if (
+    fieldLabel === "Override AC"
+  ) {
+    apiValue =
+      avttApplyNumericOperation({
+        currentValue:
+          selectedToken.options
+            ?.armorClass,
+
+        operation,
+
+        requestedValue,
+
+        label:
+          "Armor Class"
+      });
+  } else if (
+    !Number.isFinite(
+      requestedValue
+    )
+  ) {
+    throw new Error(
+      `Invalid AC value: ${cmd.value}`
+    );
+  }
+
+  apiValue =
+    Math.round(apiValue);
+
+  const payload = {
+    characterId,
+    typeId,
+    value:
+      apiValue,
+    notes:
+      String(
+        cmd.effectName || ""
+      ),
+    valueId:
+      null,
+    valueTypeId:
+      null,
+    contextId:
+      null,
+    contextTypeId:
+      null,
+    partyId:
+      null
+  };
+
+  const result =
+    await avttDdbCharacterRequest({
+      url:
+        "https://character-service.dndbeyond.com/character/v5/custom/value",
+
+      method:
+        "PUT",
+
+      payload
+    });
+
+  console.log(
+    "applyPcStatEffect: direct D&D Beyond AC update succeeded",
+    {
+      character:
+        selectedToken.options?.name,
+
+      characterId,
+      fieldLabel,
+      typeId,
+      operation,
+      requestedValue,
+      apiValue,
+
+      notes:
+        payload.notes,
+
+      status:
+        result.status,
+
+      response:
+        result.responseText.slice(
+          0,
+          500
+        )
+    }
+  );
+
+  avttRefreshDdbCharacter(
+    characterId
+  );
+}
+
+async function avttApplyMovementEffect(
+  cmd
+) {
+  const {
+    selectedToken,
+    characterId,
+    pcData
+  } =
+    avttGetSelectedPcContext();
+
+  const movementTypes = {
+    walking: {
+      id: 1,
+      name: "Walking"
+    },
+
+    burrowing: {
+      id: 2,
+      name: "Burrowing"
+    },
+
+    climbing: {
+      id: 3,
+      name: "Climbing"
+    },
+
+    flying: {
+      id: 4,
+      name: "Flying"
+    },
+
+    swimming: {
+      id: 5,
+      name: "Swimming"
+    }
+  };
+
+  const movementTypeKey =
+    Object.hasOwn(
+      movementTypes,
+      String(
+        cmd.movementType || ""
+      )
+    )
+      ? String(cmd.movementType)
+      : "walking";
+
+  const movementType =
+    movementTypes[
+      movementTypeKey
+    ];
+
+  const currentMovementSpeed =
+    Number(
+      pcData?.speeds?.find(
+        speed =>
+          String(
+            speed?.name || ""
+          ).toLowerCase() ===
+          movementTypeKey
+      )?.distance ??
+      (
+        movementTypeKey ===
+          "walking"
+          ? (
+              selectedToken.options
+                ?.speed ??
+              selectedToken.options
+                ?.speeds?.walk ??
+              selectedToken.options
+                ?.speeds?.walking
+            )
+          : selectedToken.options
+              ?.speeds?.[
+                movementTypeKey
+              ]
+      ) ??
+      0
+    );
+
+  const operation =
+    String(
+      cmd.operation || "set"
+    );
+
+  let distance =
+    avttApplyNumericOperation({
+      currentValue:
+        currentMovementSpeed,
+
+      operation,
+
+      requestedValue:
+        cmd.value,
+
+      label:
+        `${movementType.name} Speed`
+    });
+
+  distance =
+    Math.max(
+      0,
+      Math.round(distance)
+    );
+
+  const payload = {
+    characterId,
+
+    movementId:
+      movementType.id,
+
+    distance,
+
+    source:
+      String(
+        cmd.effectName || ""
+      ) || null
+  };
+
+  const result =
+    await avttDdbCharacterRequest({
+      url:
+        "https://character-service.dndbeyond.com/character/v5/custom/movement",
+
+      method:
+        "PUT",
+
+      payload
+    });
+
+  console.log(
+    "applyPcStatEffect: direct D&D Beyond Movement Speed update succeeded",
+    {
+      character:
+        selectedToken.options?.name,
+
+      characterId,
+
+      movementType:
+        movementType.name,
+
+      movementId:
+        movementType.id,
+
+      operation,
+
+      currentMovementSpeed,
+
+      requestedValue:
+        Number(cmd.value),
+
+      distance,
+
+      source:
+        payload.source,
+
+      status:
+        result.status,
+
+      response:
+        result.responseText.slice(
+          0,
+          500
+        )
+    }
+  );
+
+  avttRefreshDdbCharacter(
+    characterId
+  );
+}
+
+async function avttApplyMaxHpEffect(
+  cmd
+) {
+  const {
+    selectedToken,
+    characterId,
+    pcData
+  } =
+    avttGetSelectedPcContext();
+
+  const currentMaxHp =
+    Number(
+      pcData?.hitPointInfo
+        ?.maximum ??
+      selectedToken.options
+        ?.hitPointInfo?.maximum ??
+      selectedToken.options
+        ?.max_hp ??
+      0
+    );
+
+  const operation =
+    String(
+      cmd.operation || "set"
+    );
+
+  let overrideHitPoints =
+    avttApplyNumericOperation({
+      currentValue:
+        currentMaxHp,
+
+      operation,
+
+      requestedValue:
+        cmd.value,
+
+      label:
+        "Max HP"
+    });
+
+  overrideHitPoints =
+    Math.max(
+      1,
+      Math.round(
+        overrideHitPoints
+      )
+    );
+
+  const payload = {
+    characterId,
+
+    overrideHitPoints
+  };
+
+  const result =
+    await avttDdbCharacterRequest({
+      url:
+        "https://character-service.dndbeyond.com/character/v5/life/hp/override",
+
+      method:
+        "PUT",
+
+      payload
+    });
+
+  console.log(
+    "applyPcStatEffect: direct D&D Beyond Max HP update succeeded",
+    {
+      character:
+        selectedToken.options?.name,
+
+      characterId,
+
+      operation,
+
+      currentMaxHp,
+
+      requestedValue:
+        Number(cmd.value),
+
+      overrideHitPoints,
+
+      status:
+        result.status,
+
+      response:
+        result.responseText.slice(
+          0,
+          500
+        )
+    }
+  );
+
+  avttRefreshDdbCharacter(
+    characterId
+  );
+}
+
+async function avttApplyAbilityScoreEffect(
+  cmd
+) {
+  const {
+    selectedToken,
+    characterId,
+    pcData
+  } =
+    avttGetSelectedPcContext();
+
+  const abilityDefinitions = {
+    STR: {
+      statId: 1,
+      name: "Strength"
+    },
+
+    DEX: {
+      statId: 2,
+      name: "Dexterity"
+    },
+
+    CON: {
+      statId: 3,
+      name: "Constitution"
+    },
+
+    INT: {
+      statId: 4,
+      name: "Intelligence"
+    },
+
+    WIS: {
+      statId: 5,
+      name: "Wisdom"
+    },
+
+    CHA: {
+      statId: 6,
+      name: "Charisma"
+    }
+  };
+
+  const stat =
+    String(cmd.stat || "")
+      .toUpperCase();
+
+  const ability =
+    abilityDefinitions[stat];
+
+  if (!ability) {
+    throw new Error(
+      `Unsupported ability: ${cmd.stat}`
+    );
+  }
+
+  const currentAbility =
+    (pcData?.abilities || [])
+      .find(entry => {
+        const name =
+          String(
+            entry?.name || ""
+          ).toLowerCase();
+
+        const abbreviation =
+          String(
+            entry?.abbreviation ||
+            entry?.shortName ||
+            ""
+          ).toUpperCase();
+
+        return (
+          name ===
+            ability.name.toLowerCase() ||
+          name ===
+            stat.toLowerCase() ||
+          abbreviation === stat
+        );
+      });
+
+  const currentScore =
+    Number(
+      currentAbility?.score ??
+      currentAbility?.value ??
+      currentAbility?.totalScore ??
+      10
+    );
+
+  const operation =
+    String(
+      cmd.operation || "set"
+    );
+
+  let overrideScore =
+    avttApplyNumericOperation({
+      currentValue:
+        currentScore,
+
+      operation,
+
+      requestedValue:
+        cmd.value,
+
+      label:
+        `${ability.name} Score`
+    });
+
+  overrideScore =
+    Math.max(
+      1,
+      Math.round(
+        overrideScore
+      )
+    );
+
+  const payload = {
+    characterId,
+
+    statId:
+      ability.statId,
+
+    // D&D Beyond type 3 is Override Score.
+    type:
+      3,
+
+    value:
+      overrideScore
+  };
+
+  const result =
+    await avttDdbCharacterRequest({
+      url:
+        "https://character-service.dndbeyond.com/character/v5/character/ability-score",
+
+      method:
+        "PUT",
+
+      payload
+    });
+
+  console.log(
+    "applyPcStatEffect: direct D&D Beyond Ability Score update succeeded",
+    {
+      character:
+        selectedToken.options?.name,
+
+      characterId,
+
+      ability:
+        ability.name,
+
+      stat,
+
+      statId:
+        ability.statId,
+
+      operation,
+
+      currentScore,
+
+      requestedValue:
+        Number(cmd.value),
+
+      overrideScore,
+
+      status:
+        result.status,
+
+      response:
+        result.responseText.slice(
+          0,
+          500
+        )
+    }
+  );
+
+  avttRefreshDdbCharacter(
+    characterId
+  );
+}
+
+async function avttClearArmorClassEffects(
+  characterId
+) {
+  const acTypeIds = [
+    1, // Override AC
+    2, // Additional Magic Bonus
+    3, // Additional Misc Bonus
+    4  // Override Base Armor + DEX
+  ];
+
+  for (const typeId of acTypeIds) {
+    await avttDdbCharacterRequest({
+      url:
+        "https://character-service.dndbeyond.com/character/v5/custom/value",
+
+      method:
+        "PUT",
+
+      payload: {
+        characterId,
+        typeId,
+        value:
+          null,
+        notes:
+          "",
+        valueId:
+          null,
+        valueTypeId:
+          null,
+        contextId:
+          null,
+        contextTypeId:
+          null,
+        partyId:
+          null
+      }
+    });
+  }
+}
+
+async function avttClearMovementEffects(
+  characterId
+) {
+  const movementIds = [
+    1, // Walking
+    2, // Burrowing
+    3, // Climbing
+    4, // Flying
+    5  // Swimming
+  ];
+
+  for (
+    const movementId
+    of movementIds
+  ) {
+    await avttDdbCharacterRequest({
+      url:
+        "https://character-service.dndbeyond.com/character/v5/custom/movement",
+
+      method:
+        "PUT",
+
+      payload: {
+        characterId,
+        movementId,
+        distance:
+          null,
+        source:
+          ""
+      }
+    });
+  }
+}
+
+async function avttClearMaxHpEffect(
+  characterId
+) {
+  await avttDdbCharacterRequest({
+    url:
+      "https://character-service.dndbeyond.com/character/v5/life/hp/override",
+
+    method:
+      "PUT",
+
+    payload: {
+      characterId,
+      overrideHitPoints:
+        null
+    }
+  });
+}
+
+async function avttClearAbilityEffects(
+  characterId,
+  stat
+) {
+  const statIds = {
+    STR: 1,
+    DEX: 2,
+    CON: 3,
+    INT: 4,
+    WIS: 5,
+    CHA: 6
+  };
+
+  const statId =
+    statIds[
+      String(stat || "")
+        .toUpperCase()
+    ];
+
+  if (!statId) {
+    throw new Error(
+      `Unsupported ability: ${stat}`
+    );
+  }
+
+  await avttDdbCharacterRequest({
+    url:
+      "https://character-service.dndbeyond.com/character/v5/character/ability-score",
+
+    method:
+      "PUT",
+
+    payload: {
+      characterId,
+      statId,
+
+      // D&D Beyond type 3 is Override Score.
+      type:
+        3,
+
+      value:
+        null
+    }
+  });
+}
+
+const AVTT_PC_STAT_CLEAR_HANDLERS = {
+  armorClass:
+    avttClearArmorClassEffects,
+
+  speed:
+    avttClearMovementEffects,
+
+  maxHp:
+    avttClearMaxHpEffect,
+
+  STR:
+    avttClearAbilityEffects,
+
+  DEX:
+    avttClearAbilityEffects,
+
+  CON:
+    avttClearAbilityEffects,
+
+  INT:
+    avttClearAbilityEffects,
+
+  WIS:
+    avttClearAbilityEffects,
+
+  CHA:
+    avttClearAbilityEffects
+};
+
+async function avttClearPcStatEffects(
+  cmd
+) {
+  const {
+    selectedToken,
+    characterId
+  } =
+    avttGetSelectedPcContext();
+
+  const aliases = {
+    ac:
+      "armorClass",
+
+    armorclass:
+      "armorClass",
+
+    speed:
+      "speed",
+
+    movement:
+      "speed",
+
+    maxhp:
+      "maxHp",
+
+    maximumhp:
+      "maxHp",
+
+    str:
+      "STR",
+
+    strength:
+      "STR",
+
+    dex:
+      "DEX",
+
+    dexterity:
+      "DEX",
+
+    con:
+      "CON",
+
+    constitution:
+      "CON",
+
+    int:
+      "INT",
+
+    intelligence:
+      "INT",
+
+    wis:
+      "WIS",
+
+    wisdom:
+      "WIS",
+
+    cha:
+      "CHA",
+
+    charisma:
+      "CHA"
+  };
+
+  const rawStat =
+    String(cmd.stat || "")
+      .trim();
+
+  const stat =
+    aliases[
+      rawStat.toLowerCase()
+    ] || rawStat;
+
+  const scope =
+    cmd.scope === "all"
+      ? "all"
+      : "stat";
+
+  const clearedStats = [];
+
+  if (scope === "all") {
+    const statOrder = [
+      "armorClass",
+      "speed",
+      "maxHp",
+      "STR",
+      "DEX",
+      "CON",
+      "INT",
+      "WIS",
+      "CHA"
+    ];
+
+    for (
+      const statName
+      of statOrder
+    ) {
+      const handler =
+        AVTT_PC_STAT_CLEAR_HANDLERS[
+          statName
+        ];
+
+      await handler(
+        characterId,
+        statName
+      );
+
+      clearedStats.push(
+        statName
+      );
+    }
+  } else {
+    const handler =
+      AVTT_PC_STAT_CLEAR_HANDLERS[
+        stat
+      ];
+
+    if (!handler) {
+      throw new Error(
+        `Unsupported stat for clearing: ${stat}`
+      );
+    }
+
+    await handler(
+      characterId,
+      stat
+    );
+
+    clearedStats.push(
+      stat
+    );
+  }
+
+  /*
+   * Remove any legacy token-local effects left over from
+   * the earlier implementation.
+   */
+  delete selectedToken
+    .options
+    .avttPcEffects;
+
+  selectedToken
+    .place_sync_persist();
+
+  console.log(
+    "clearPcStatEffects: direct D&D Beyond clear succeeded",
+    {
+      character:
+        selectedToken.options?.name,
+
+      characterId,
+      scope,
+      requestedStat:
+        scope === "all"
+          ? null
+          : stat,
+
+      clearedStats
+    }
+  );
+
+  avttRefreshDdbCharacter(
+    characterId
+  );
+}
+
+const AVTT_PC_STAT_EFFECT_HANDLERS = {
+  armorClass:
+    avttApplyArmorClassEffect,
+
+  speed:
+    avttApplyMovementEffect,
+
+  maxHp:
+    avttApplyMaxHpEffect,
+
+  STR:
+    avttApplyAbilityScoreEffect,
+
+  DEX:
+    avttApplyAbilityScoreEffect,
+
+  CON:
+    avttApplyAbilityScoreEffect,
+
+  INT:
+    avttApplyAbilityScoreEffect,
+
+  WIS:
+    avttApplyAbilityScoreEffect,
+
+  CHA:
+    avttApplyAbilityScoreEffect
+};
+
+async function avttDispatchPcStatEffect(
+  cmd
+) {
+  const stat =
+    String(cmd.stat || "");
+
+  const handler =
+    AVTT_PC_STAT_EFFECT_HANDLERS[
+      stat
+    ];
+
+  if (!handler) {
+    return false;
+  }
+
+  await handler(cmd);
+
+  return true;
+}
+
 window.addEventListener("message", (event) => {
   if (event.data?.type !== "AVTT_BRIDGE_COMMAND") return;
 
   const cmd = event.data.command;
   console.log("AVTT injected command:", cmd);
+
+  if (
+    cmd.command ===
+      "applyPcStatEffect"
+  ) {
+    window.__lastPcStatCommand =
+      cmd;
+
+    console.log(
+      "PC STAT COMMAND SETTINGS",
+      {
+        stat:
+          cmd.stat,
+
+        abilityField:
+          cmd.abilityField,
+
+        operation:
+          cmd.operation,
+
+        value:
+          cmd.value
+      }
+    );
+  }
 
   if (cmd.command === "spawnTokenFromPath") {
     void (async () => {
@@ -4080,579 +5267,27 @@ window.addEventListener("message", (event) => {
   }
 
   if (
-    cmd.command === "applyPcStatEffect" &&
-    String(cmd.stat || "") === "speed"
+    cmd.command ===
+      "applyPcStatEffect" &&
+    Object.hasOwn(
+      AVTT_PC_STAT_EFFECT_HANDLERS,
+      String(cmd.stat || "")
+    )
   ) {
     void (async () => {
       try {
-        const selectedTokenId =
-          Array.isArray(
-            CURRENTLY_SELECTED_TOKENS
-          )
-            ? CURRENTLY_SELECTED_TOKENS[0]
-            : null;
-
-        const selectedToken =
-          selectedTokenId
-            ? window.TOKEN_OBJECTS?.[
-                selectedTokenId
-              ]
-            : null;
-
-        if (!selectedToken) {
-          throw new Error(
-            "Select a PC token first"
-          );
-        }
-
-        if (
-          selectedToken.options?.itemType !==
-            "pc"
-        ) {
-          throw new Error(
-            "The selected token is not a PC"
-          );
-        }
-
-        const characterId =
-          Number(
-            selectedToken.options
-              ?.characterId
-          );
-
-        if (
-          !Number.isFinite(characterId) ||
-          characterId <= 0
-        ) {
-          throw new Error(
-            "The selected PC has no valid character ID"
-          );
-        }
-
-        const requestedValue =
-          Number(cmd.value);
-
-        if (!Number.isFinite(requestedValue)) {
-          throw new Error(
-            `Invalid Speed value: ${cmd.value}`
-          );
-        }
-
-        const operation =
-          String(
-            cmd.operation || "set"
-          );
-
-        const pcData =
-          (window.pcs || []).find(entry =>
-            String(entry.characterId) ===
-              String(characterId) ||
-            entry.name ===
-              selectedToken.options?.name
-          );
-
-        const movementTypeNames = {
-          walking: "walking",
-          burrowing: "burrowing",
-          climbing: "climbing",
-          flying: "flying",
-          swimming: "swimming"
-        };
-
-        const requestedMovementType =
-          Object.hasOwn(
-            movementTypeNames,
-            String(
-              cmd.movementType || ""
-            )
-          )
-            ? String(cmd.movementType)
-            : "walking";
-
-        const currentMovementSpeed =
-          Number(
-            pcData?.speeds?.find(
-              speed =>
-                String(speed?.name || "")
-                  .toLowerCase() ===
-                movementTypeNames[
-                  requestedMovementType
-                ]
-            )?.distance ??
-            (
-              requestedMovementType ===
-                "walking"
-                ? (
-                    selectedToken.options?.speed ??
-                    selectedToken.options?.speeds
-                      ?.walk ??
-                    selectedToken.options?.speeds
-                      ?.walking
-                  )
-                : selectedToken.options?.speeds?.[
-                    requestedMovementType
-                  ]
-            ) ??
-            0
-          );
-
-        if (
-          !Number.isFinite(
-            currentMovementSpeed
-          )
-        ) {
-          throw new Error(
-            `The selected PC has no valid ${requestedMovementType} speed`
-          );
-        }
-
-        let distance =
-          requestedValue;
-
-        switch (operation) {
-          case "add":
-            distance =
-              currentMovementSpeed +
-              requestedValue;
-            break;
-
-          case "subtract":
-            distance =
-              currentMovementSpeed -
-              requestedValue;
-            break;
-
-          case "multiply":
-            distance =
-              currentMovementSpeed *
-              requestedValue;
-            break;
-
-          case "divide":
-            if (requestedValue === 0) {
-              throw new Error(
-                "Cannot divide Walking Speed by zero"
-              );
-            }
-
-            distance =
-              currentMovementSpeed /
-              requestedValue;
-            break;
-
-          case "set":
-          default:
-            distance =
-              requestedValue;
-        }
-
-        distance =
-          Math.max(
-            0,
-            Math.round(distance)
-          );
-
-        const cobaltToken =
-          await avttGetFreshCobaltToken();
-
-        console.log(
-          "applyPcStatEffect: obtained cobalt token for Movement Speed",
-          {
-            tokenLength:
-              cobaltToken.length
-          }
+        await avttDispatchPcStatEffect(
+          cmd
         );
-
-        const movementTypes = {
-          walking: {
-            id: 1,
-            name: "Walking"
-          },
-
-          burrowing: {
-            id: 2,
-            name: "Burrowing"
-          },
-
-          climbing: {
-            id: 3,
-            name: "Climbing"
-          },
-
-          flying: {
-            id: 4,
-            name: "Flying"
-          },
-
-          swimming: {
-            id: 5,
-            name: "Swimming"
-          }
-        };
-
-        const movementTypeKey =
-          Object.hasOwn(
-            movementTypes,
-            String(
-              cmd.movementType || ""
-            )
-          )
-            ? String(cmd.movementType)
-            : "walking";
-
-        const movementType =
-          movementTypes[
-            movementTypeKey
-          ];
-
-        const payload = {
-          characterId,
-          movementId:
-            movementType.id,
-          distance,
-          source:
-            String(
-              cmd.effectName || ""
-            ) || null
-        };
-
-        const response =
-          await fetch(
-            "https://character-service.dndbeyond.com/character/v5/custom/movement",
-            {
-              method:
-                "PUT",
-
-              credentials:
-                "include",
-
-              headers: {
-                "Accept":
-                  "application/json, text/plain, */*",
-
-                "Authorization":
-                  `Bearer ${cobaltToken}`,
-
-                "Content-Type":
-                  "application/json"
-              },
-
-              body:
-                JSON.stringify(payload)
-            }
-          );
-
-        const responseText =
-          await response.text();
-
-        if (!response.ok) {
-          throw new Error(
-            `D&D Beyond returned ${response.status}: ` +
-            responseText.slice(0, 500)
-          );
-        }
-
-        console.log(
-          "applyPcStatEffect: direct D&D Beyond Movement Speed update succeeded",
-          {
-            character:
-              selectedToken.options?.name,
-            characterId,
-            movementId:
-              1,
-            operation,
-            movementType:
-              movementType.name,
-            movementId:
-              movementType.id,
-            currentMovementSpeed,
-            requestedValue,
-            distance,
-            source:
-              payload.source,
-            status:
-              response.status,
-            response:
-              responseText.slice(0, 500)
-          }
-        );
-
-        setTimeout(() => {
-          window.update_pc_with_api_call?.(
-            String(characterId)
-          );
-        }, 750);
-
-        setTimeout(() => {
-          window.update_pc_with_api_call?.(
-            String(characterId)
-          );
-        }, 2500);
       } catch (error) {
         console.error(
-          "applyPcStatEffect: direct D&D Beyond Movement Speed update failed",
-          error
-        );
-      }
-    })();
-
-    return;
-  }
-
-  if (
-    cmd.command === "applyPcStatEffect" &&
-    String(cmd.stat || "") === "armorClass"
-  ) {
-    void (async () => {
-      try {
-        const selectedTokenId =
-          Array.isArray(
-            CURRENTLY_SELECTED_TOKENS
-          )
-            ? CURRENTLY_SELECTED_TOKENS[0]
-            : null;
-
-        const selectedToken =
-          selectedTokenId
-            ? window.TOKEN_OBJECTS?.[
-                selectedTokenId
-              ]
-            : null;
-
-        if (!selectedToken) {
-          throw new Error(
-            "Select a PC token first"
-          );
-        }
-
-        if (
-          selectedToken.options?.itemType !==
-            "pc"
-        ) {
-          throw new Error(
-            "The selected token is not a PC"
-          );
-        }
-
-        const characterId =
-          Number(
-            selectedToken.options?.characterId
-          );
-
-        if (
-          !Number.isFinite(characterId) ||
-          characterId <= 0
-        ) {
-          throw new Error(
-            "The selected PC has no valid character ID"
-          );
-        }
-
-        const fieldTypeIds = {
-          "Override AC": 1,
-          "Additional Magic Bonus": 2,
-          "Additional Misc Bonus": 3,
-          "Override Base Armor + DEX": 4
-        };
-
-        const fieldLabel =
-          Object.hasOwn(
-            fieldTypeIds,
-            cmd.acField
-          )
-            ? cmd.acField
-            : "Override AC";
-
-        const typeId =
-          fieldTypeIds[fieldLabel];
-
-        const requestedValue =
-          Number(cmd.value);
-
-        if (!Number.isFinite(requestedValue)) {
-          throw new Error(
-            `Invalid AC value: ${cmd.value}`
-          );
-        }
-
-        const operation =
-          String(
-            cmd.operation || "set"
-          );
-
-        let apiValue =
-          requestedValue;
-
-        /*
-         * For Override AC, mathematical operations use the
-         * PC token's currently synchronized total AC.
-         *
-         * For the bonus fields, the configured number is
-         * written directly into that bonus field.
-         */
-        if (
-          fieldLabel === "Override AC" &&
-          operation !== "set"
-        ) {
-          const currentAc =
-            Number(
-              selectedToken.options
-                ?.armorClass ?? 0
-            );
-
-          if (!Number.isFinite(currentAc)) {
-            throw new Error(
-              "The selected PC has no valid current AC"
-            );
-          }
-
-          switch (operation) {
-            case "add":
-              apiValue =
-                currentAc +
-                requestedValue;
-              break;
-
-            case "subtract":
-              apiValue =
-                currentAc -
-                requestedValue;
-              break;
-
-            case "multiply":
-              apiValue =
-                currentAc *
-                requestedValue;
-              break;
-
-            case "divide":
-              if (requestedValue === 0) {
-                throw new Error(
-                  "Cannot divide AC by zero"
-                );
-              }
-
-              apiValue =
-                currentAc /
-                requestedValue;
-              break;
-
-            default:
-              apiValue =
-                requestedValue;
-          }
-        }
-
-        apiValue =
-          Math.round(apiValue);
-
-        const payload = {
-          characterId,
-          typeId,
-          value:
-            apiValue,
-          notes:
-            String(
-              cmd.effectName || ""
-            ),
-          valueId:
-            null,
-          valueTypeId:
-            null,
-          contextId:
-            null,
-          contextTypeId:
-            null,
-          partyId:
-            null
-        };
-
-        const cobaltToken =
-          await avttGetFreshCobaltToken();
-
-        console.log(
-          "applyPcStatEffect: obtained cobalt token",
+          "applyPcStatEffect: direct D&D Beyond update failed",
           {
-            tokenLength:
-              cobaltToken.length
+            stat:
+              cmd.stat,
+
+            error
           }
-        );
-
-        const response =
-          await fetch(
-            "https://character-service.dndbeyond.com/character/v5/custom/value",
-            {
-              method:
-                "PUT",
-
-              credentials:
-                "include",
-
-              headers: {
-                "Accept":
-                  "application/json, text/plain, */*",
-
-                "Authorization":
-                  `Bearer ${cobaltToken}`,
-
-                "Content-Type":
-                  "application/json"
-              },
-
-              body:
-                JSON.stringify(payload)
-            }
-          );
-
-        const responseText =
-          await response.text();
-
-        if (!response.ok) {
-          throw new Error(
-            `D&D Beyond returned ${response.status}: ` +
-            responseText.slice(0, 500)
-          );
-        }
-
-        console.log(
-          "applyPcStatEffect: direct D&D Beyond AC update succeeded",
-          {
-            character:
-              selectedToken.options?.name,
-            characterId,
-            fieldLabel,
-            typeId,
-            operation,
-            requestedValue,
-            apiValue,
-            notes:
-              payload.notes,
-            status:
-              response.status,
-            response:
-              responseText.slice(0, 500)
-          }
-        );
-
-        /*
-         * Ask AboveVTT to refresh the character after the
-         * server has had time to store the customization.
-         */
-        setTimeout(() => {
-          window.update_pc_with_api_call?.(
-            String(characterId)
-          );
-        }, 750);
-
-        setTimeout(() => {
-          window.update_pc_with_api_call?.(
-            String(characterId)
-          );
-        }, 2500);
-      } catch (error) {
-        console.error(
-          "applyPcStatEffect: direct D&D Beyond AC update failed",
-          error
         );
       }
     })();
@@ -4871,101 +5506,30 @@ window.addEventListener("message", (event) => {
     return;
   }
 
-  if (cmd.command === "clearPcStatEffects") {
-    const aliases = {
-      ac: "armorClass",
-      armorclass: "armorClass",
-      speed: "speed",
-      movement: "speed",
-      maxhp: "maxHp",
-      maximumhp: "maxHp",
-      str: "STR",
-      strength: "STR",
-      dex: "DEX",
-      dexterity: "DEX",
-      con: "CON",
-      constitution: "CON",
-      int: "INT",
-      intelligence: "INT",
-      wis: "WIS",
-      wisdom: "WIS",
-      cha: "CHA",
-      charisma: "CHA"
-    };
+  if (
+    cmd.command ===
+      "clearPcStatEffects"
+  ) {
+    void (async () => {
+      try {
+        await avttClearPcStatEffects(
+          cmd
+        );
+      } catch (error) {
+        console.error(
+          "clearPcStatEffects: direct D&D Beyond clear failed",
+          {
+            scope:
+              cmd.scope,
 
-    const rawStat =
-      String(cmd.stat || "")
-        .trim();
+            stat:
+              cmd.stat,
 
-    const stat =
-      aliases[rawStat.toLowerCase()] ||
-      rawStat;
-
-    const scope =
-      cmd.scope === "all"
-        ? "all"
-        : "stat";
-
-    const selectedIds =
-      typeof CURRENTLY_SELECTED_TOKENS !==
-        "undefined" &&
-      Array.isArray(CURRENTLY_SELECTED_TOKENS)
-        ? CURRENTLY_SELECTED_TOKENS
-        : [];
-
-    let changed = 0;
-
-    selectedIds.forEach(tokenId => {
-      const token =
-        window.TOKEN_OBJECTS?.[tokenId];
-
-      if (
-        !token ||
-        token.options?.itemType !== "pc"
-      ) {
-        return;
+            error
+          }
+        );
       }
-
-      if (scope === "all") {
-        delete token.options.avttPcEffects;
-      } else {
-        const allEffects =
-          token.options.avttPcEffects &&
-          typeof token.options.avttPcEffects ===
-            "object"
-            ? {
-                ...token.options.avttPcEffects
-              }
-            : {};
-
-        delete allEffects[stat];
-
-        if (
-          Object.keys(allEffects).length
-        ) {
-          token.options.avttPcEffects =
-            allEffects;
-        } else {
-          delete token.options.avttPcEffects;
-        }
-      }
-
-      token.place_sync_persist();
-
-      changed += 1;
-    });
-
-    console.log(
-      "clearPcStatEffects:",
-      {
-        scope,
-        stat:
-          scope === "all"
-            ? null
-            : stat,
-        changed
-      }
-    );
+    })();
 
     return;
   }
