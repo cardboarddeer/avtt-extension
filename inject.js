@@ -466,6 +466,8 @@ function tokenToState(
 
     spellSaveDc,
     spellAttackBonus,
+    proficiencyBonus:
+      proficiency,
 
     grappleDc:
       8 +
@@ -963,10 +965,10 @@ async function renderPlayerCard(
         pc.spellSaveDc || "—"
       ],
       [
-        "SPELL ATK",
-        pc.spellAttackBonus != null
+        "PB",
+        pc.proficiencyBonus != null
           ? signedModifier(
-              pc.spellAttackBonus
+              pc.proficiencyBonus
             )
           : "—"
       ],
