@@ -1253,6 +1253,85 @@ async function renderPlayerCard(
     "image/png"
   );
 }
+function getInitiativeTrackerState() {
+  const rows = [
+    ...document.querySelectorAll(
+      "#combat_area tr.CTToken"
+    )
+  ];
+
+  const participants =
+    rows.map((row, index) => {
+      const initiativeInput =
+        row.querySelector("input.init");
+
+      const initiative =
+        initiativeInput?.value !== ""
+          ? Number(initiativeInput?.value)
+          : null;
+
+      return {
+        index,
+
+        name:
+          row.getAttribute("data-name") ||
+          "Unknown",
+
+        tokenId:
+          row.getAttribute("data-target") ||
+          null,
+
+        initiative:
+          Number.isFinite(initiative)
+            ? initiative
+            : null,
+
+        active:
+          row.getAttribute(
+            "data-current"
+          ) === "1",
+
+        type:
+          row.hasAttribute("data-monster")
+            ? "npc"
+            : "pc"
+      };
+    });
+
+  const activeIndex =
+    participants.findIndex(
+      participant =>
+        participant.active
+    );
+
+  const roundInput =
+    document.querySelector(
+      "#round_number"
+    );
+
+  const round =
+    Number(roundInput?.value);
+
+  return {
+    active:
+      rows.length > 0,
+
+    round:
+      Number.isFinite(round)
+        ? round
+        : null,
+
+    activeIndex,
+
+    current:
+      activeIndex >= 0
+        ? participants[activeIndex]
+        : null,
+
+    participants
+  };
+}
+
 async function getCombatState() {
   const selectedTokenId =
     CURRENTLY_SELECTED_TOKENS?.[0];
@@ -1426,6 +1505,10 @@ async function getCombatState() {
     selected: Boolean(selectedToken),
     selectedToken: selectedTokenState,
     pcs,
+
+    initiativeTracker:
+      getInitiativeTrackerState(),
+
     time: Date.now()
   };
 }
