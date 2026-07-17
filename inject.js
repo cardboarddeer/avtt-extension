@@ -2947,6 +2947,1099 @@ function selectTokenByName(tokenName) {
     return false;
   }
 }
+
+const AVTT_PC_ROLL_SETTING_RULES = {
+  versatile: {
+    values: new Set([
+      "both",
+      "1",
+      "2"
+    ])
+  },
+
+  crit: {
+    values: new Set([
+      "0",
+      "1",
+      "2",
+      "3"
+    ])
+  },
+
+  critRange: {
+    validate(value) {
+      const number =
+        Number(value);
+
+      return (
+        Number.isInteger(number) &&
+        number >= 1 &&
+        number <= 20
+      );
+    }
+  },
+
+  hitRoll: {},
+  damageRoll: {},
+  checkRoll: {},
+  saveRoll: {}
+};
+
+function avttGetSelectedPcRollSettingsContext() {
+  const pcContext =
+    avttGetSelectedPcContext();
+
+  const characterId =
+    String(
+      pcContext.characterId
+    );
+
+  const storageKey =
+    "CHARACTER_AVTT_SETTINGS" +
+    characterId;
+
+  let settings =
+    {};
+
+  try {
+    const storedSettings =
+      window.localStorage.getItem(
+        storageKey
+      );
+
+    if (storedSettings) {
+      const parsedSettings =
+        JSON.parse(
+          storedSettings
+        );
+
+      if (
+        parsedSettings &&
+        typeof parsedSettings ===
+          "object"
+      ) {
+        settings =
+          parsedSettings;
+      }
+    }
+  } catch (error) {
+    console.warn(
+      "Unable to read PC roll settings:",
+      error
+    );
+  }
+
+  const sheetFrames =
+    [
+      ...document.querySelectorAll(
+        "#sheet iframe"
+      )
+    ];
+
+  const characterFrame =
+    sheetFrames.find(frame => {
+      const sheetUrl =
+        String(
+          frame.getAttribute(
+            "data-sheet_url"
+          ) ||
+          frame.getAttribute(
+            "src"
+          ) ||
+          frame.src ||
+          ""
+        );
+
+      return sheetUrl.includes(
+        `/characters/${characterId}`
+      );
+    }) ||
+    null;
+
+  const characterWindow =
+    characterFrame?.contentWindow ||
+    null;
+
+  if (
+    characterWindow
+      ?.CHARACTER_AVTT_SETTINGS &&
+    typeof characterWindow
+      .CHARACTER_AVTT_SETTINGS ===
+      "object"
+  ) {
+    settings = {
+      ...settings,
+      ...characterWindow
+        .CHARACTER_AVTT_SETTINGS
+    };
+  }
+
+  return {
+    ...pcContext,
+    characterId,
+    storageKey,
+    settings,
+    characterFrame,
+    characterWindow
+  };
+}
+
+function avttApplyPcRollSetting(
+  cmd
+) {
+  const setting =
+    String(
+      cmd.setting ||
+      ""
+    ).trim();
+
+  const rule =
+    AVTT_PC_ROLL_SETTING_RULES[
+      setting
+    ];
+
+  if (!rule) {
+    throw new Error(
+      `Unsupported PC roll setting: ${setting}`
+    );
+  }
+
+  const value =
+    String(
+      cmd.value ??
+      ""
+    );
+
+  if (
+    rule.values &&
+    !rule.values.has(value)
+  ) {
+    throw new Error(
+      `Invalid value for ${setting}: ${value}`
+    );
+  }
+
+  if (
+    rule.validate &&
+    !rule.validate(value)
+  ) {
+    throw new Error(
+      `Invalid value for ${setting}: ${value}`
+    );
+  }
+
+  const {
+    characterId,
+    storageKey,
+    settings,
+    characterWindow
+  } =
+    avttGetSelectedPcRollSettingsContext();
+
+  settings[setting] =
+    value;
+
+  window.localStorage.setItem(
+    storageKey,
+    JSON.stringify(settings)
+  );
+
+  let control =
+    null;
+
+  if (characterWindow) {
+    if (
+      characterWindow
+        .CHARACTER_AVTT_SETTINGS &&
+      typeof characterWindow
+        .CHARACTER_AVTT_SETTINGS ===
+        "object"
+    ) {
+      characterWindow
+        .CHARACTER_AVTT_SETTINGS[
+          setting
+        ] =
+        value;
+    }
+
+    try {
+      characterWindow.localStorage.setItem(
+        storageKey,
+        JSON.stringify(settings)
+      );
+    } catch (error) {
+      console.warn(
+        "Unable to synchronize character-frame roll settings:",
+        error
+      );
+    }
+
+    control =
+      characterWindow.document
+        ?.querySelector(
+          `[data-option-name="${setting}"] select, ` +
+          `[data-option-name="${setting}"] input`
+        ) ||
+      null;
+
+    if (control) {
+      const jq =
+        characterWindow.jQuery ||
+        characterWindow.$;
+
+      if (typeof jq === "function") {
+        jq(control)
+          .val(value)
+          .trigger("change");
+      } else {
+        control.value =
+          value;
+
+        control.dispatchEvent(
+          new Event(
+            "change",
+            {
+              bubbles: true
+            }
+          )
+        );
+      }
+    }
+  }
+
+  console.log(
+    "applyPcRollSetting:",
+    {
+      characterId,
+      setting,
+      value,
+      sheetOpen:
+        Boolean(characterWindow),
+      popupSynchronized:
+        Boolean(control)
+    }
+  );
+
+  return {
+    characterId,
+    setting,
+    value
+  };
+}
+
+
+function avttGetPcRollBuffCatalog() {
+  const sheetFrame =
+    document.querySelector(
+      "#sheet iframe"
+    );
+
+  if (!sheetFrame?.contentDocument) {
+    throw new Error(
+      "Open a player character sheet before refreshing the Roll Buff catalog."
+    );
+  }
+
+  const sheetDocument =
+    sheetFrame.contentDocument;
+
+  const sheetWindow =
+    sheetFrame.contentWindow;
+
+  if (
+    typeof sheetWindow
+      .rebuild_buffs ===
+      "function"
+  ) {
+    const existingMenus =
+      [
+        ...sheetDocument.querySelectorAll(
+          "#avtt-buff-options"
+        )
+      ];
+
+    existingMenus
+      .slice(1)
+      .forEach(menu =>
+        menu.remove()
+      );
+
+    sheetWindow.rebuild_buffs(
+      existingMenus.length ===
+        0
+    );
+  }
+
+  const categories =
+    [
+      ...sheetDocument.querySelectorAll(
+        "ul"
+      )
+    ]
+      .filter(list =>
+        list.querySelector(
+          "[data-buff]"
+        )
+      )
+      .map(list => {
+        const children =
+          [...list.children];
+
+        const category =
+          String(
+            children[0]?.innerText ||
+            list.id ||
+            "Other"
+          )
+            .replace(/\s+/g, " ")
+            .trim();
+
+        const buffs =
+          children
+            .slice(1)
+            .map(item => {
+              const control =
+                item.querySelector(
+                  "[data-buff]"
+                );
+
+              if (!control) {
+                return null;
+              }
+
+              const name =
+                String(
+                  control.dataset
+                    .buff ||
+                  ""
+                ).trim();
+
+              if (!name) {
+                return null;
+              }
+
+              const label =
+                String(
+                  item.querySelector(
+                    `label[for="${CSS.escape(
+                      control.id
+                    )}"]`
+                  )?.textContent ||
+                  name
+                )
+                  .replace(/\s+/g, " ")
+                  .trim();
+
+              if (
+                control.tagName ===
+                "SELECT"
+              ) {
+                return {
+                  name,
+                  label,
+                  type:
+                    "select",
+
+                  options:
+                    [
+                      ...control.options
+                    ]
+                      .filter(option =>
+                        option.value !==
+                        "0"
+                      )
+                      .map(option => ({
+                        value:
+                          String(
+                            option.value
+                          ),
+
+                        label:
+                          String(
+                            option.textContent ||
+                            option.value
+                          )
+                            .replace(/\s+/g, " ")
+                            .trim()
+                      }))
+                };
+              }
+
+              return {
+                name,
+                label,
+                type:
+                  "checkbox",
+                options: []
+              };
+            })
+            .filter(Boolean);
+
+        return {
+          id:
+            String(
+              list.id ||
+              ""
+            ),
+
+          category,
+          buffs
+        };
+      })
+      .filter(category =>
+        category.buffs.length >
+          0 &&
+        !new Set([
+          "Favorite",
+          "Class",
+          "Species"
+        ]).has(
+          category.category
+        )
+      );
+
+  return {
+    generatedAt:
+      Date.now(),
+
+    categoryCount:
+      categories.length,
+
+    buffCount:
+      categories.reduce(
+        (total, category) =>
+          total +
+          category.buffs.length,
+        0
+      ),
+
+    categories
+  };
+}
+
+function avttApplyPcRollBuff(
+  cmd
+) {
+  const {
+    characterId
+  } =
+    avttGetSelectedPcContext();
+
+  const buff =
+    String(
+      cmd.buff ||
+      ""
+    ).trim();
+
+  if (!buff) {
+    throw new Error(
+      "A roll buff name is required."
+    );
+  }
+
+  const value =
+    cmd.value === undefined ||
+    cmd.value === null
+      ? null
+      : String(cmd.value);
+
+  const enabled =
+    cmd.enabled !== false &&
+    value !== "0";
+
+  const storageKey =
+    "rollBuffs" +
+    characterId;
+
+  let currentBuffs = [];
+
+  try {
+    const stored =
+      JSON.parse(
+        localStorage.getItem(
+          storageKey
+        ) ||
+        "[]"
+      );
+
+    if (Array.isArray(stored)) {
+      currentBuffs =
+        stored;
+    }
+  } catch {
+    currentBuffs = [];
+  }
+
+  const nextBuffs =
+    currentBuffs.filter(entry => {
+      if (Array.isArray(entry)) {
+        return (
+          String(entry[0]) !==
+          buff
+        );
+      }
+
+      return (
+        String(entry) !==
+        buff
+      );
+    });
+
+  if (enabled) {
+    if (
+      value !== null &&
+      value !== "" &&
+      value !== "on"
+    ) {
+      nextBuffs.push([
+        buff,
+        value
+      ]);
+    } else {
+      nextBuffs.push(
+        buff
+      );
+    }
+  }
+
+  localStorage.setItem(
+    storageKey,
+    JSON.stringify(
+      nextBuffs
+    )
+  );
+
+  const characterFrame =
+    [
+      ...document.querySelectorAll(
+        "#sheet iframe"
+      )
+    ].find(frame => {
+      const sheetUrl =
+        String(
+          frame.getAttribute(
+            "data-sheet_url"
+          ) ||
+          frame.getAttribute(
+            "src"
+          ) ||
+          frame.src ||
+          ""
+        );
+
+      return sheetUrl.includes(
+        `/characters/${characterId}`
+      );
+    }) ||
+    null;
+
+  let uiSynchronized =
+    false;
+
+  if (
+    characterFrame?.contentWindow
+  ) {
+    const characterWindow =
+      characterFrame.contentWindow;
+
+    characterWindow.rollBuffs =
+      [...nextBuffs];
+
+    const control =
+      characterWindow.document
+        .getElementById(
+          `buff_${buff}`
+        );
+
+    const jq =
+      characterWindow.jQuery ||
+      characterWindow.$;
+
+    if (control) {
+      if (
+        control.tagName ===
+        "SELECT"
+      ) {
+        const controlValue =
+          enabled
+            ? value || "0"
+            : "0";
+
+        if (
+          typeof jq ===
+          "function"
+        ) {
+          jq(control)
+            .val(controlValue);
+        } else {
+          control.value =
+            controlValue;
+        }
+      } else if (
+        control.type ===
+        "checkbox"
+      ) {
+        if (
+          typeof jq ===
+          "function"
+        ) {
+          jq(control)
+            .prop(
+              "checked",
+              enabled
+            );
+        } else {
+          control.checked =
+            enabled;
+        }
+      }
+
+      uiSynchronized =
+        true;
+    }
+  }
+
+  console.log(
+    "applyPcRollBuff:",
+    {
+      characterId:
+        String(characterId),
+      buff,
+      enabled,
+      value,
+      uiSynchronized,
+      rollBuffs:
+        nextBuffs
+    }
+  );
+
+  return {
+    characterId:
+      String(characterId),
+    buff,
+    enabled,
+    value,
+    rollBuffs:
+      nextBuffs
+  };
+}
+
+
+function avttApplyPcRollBuff(
+  cmd
+) {
+  const {
+    characterId
+  } =
+    avttGetSelectedPcContext();
+
+  const buff =
+    String(
+      cmd.buff ||
+      ""
+    ).trim();
+
+  if (!buff) {
+    throw new Error(
+      "A roll buff name is required."
+    );
+  }
+
+  const value =
+    cmd.value === undefined ||
+    cmd.value === null
+      ? null
+      : String(cmd.value);
+
+  const enabled =
+    cmd.enabled !== false &&
+    value !== "0";
+
+  const storageKey =
+    "rollBuffs" +
+    characterId;
+
+  let currentBuffs = [];
+
+  try {
+    const stored =
+      JSON.parse(
+        localStorage.getItem(
+          storageKey
+        ) ||
+        "[]"
+      );
+
+    if (Array.isArray(stored)) {
+      currentBuffs =
+        stored;
+    }
+  } catch {
+    currentBuffs = [];
+  }
+
+  const nextBuffs =
+    currentBuffs.filter(entry => {
+      if (Array.isArray(entry)) {
+        return (
+          String(entry[0]) !==
+          buff
+        );
+      }
+
+      return (
+        String(entry) !==
+        buff
+      );
+    });
+
+  if (enabled) {
+    if (
+      value !== null &&
+      value !== "" &&
+      value !== "on"
+    ) {
+      nextBuffs.push([
+        buff,
+        value
+      ]);
+    } else {
+      nextBuffs.push(
+        buff
+      );
+    }
+  }
+
+  localStorage.setItem(
+    storageKey,
+    JSON.stringify(
+      nextBuffs
+    )
+  );
+
+  const characterFrame =
+    [
+      ...document.querySelectorAll(
+        "#sheet iframe"
+      )
+    ].find(frame => {
+      const sheetUrl =
+        String(
+          frame.getAttribute(
+            "data-sheet_url"
+          ) ||
+          frame.getAttribute(
+            "src"
+          ) ||
+          frame.src ||
+          ""
+        );
+
+      return sheetUrl.includes(
+        `/characters/${characterId}`
+      );
+    }) ||
+    null;
+
+  let uiSynchronized =
+    false;
+
+  if (
+    characterFrame?.contentWindow
+  ) {
+    const characterWindow =
+      characterFrame.contentWindow;
+
+    characterWindow.rollBuffs =
+      [...nextBuffs];
+
+    const control =
+      characterWindow.document
+        .getElementById(
+          `buff_${buff}`
+        );
+
+    const jq =
+      characterWindow.jQuery ||
+      characterWindow.$;
+
+    if (control) {
+      if (
+        control.tagName ===
+        "SELECT"
+      ) {
+        const controlValue =
+          enabled
+            ? value || "0"
+            : "0";
+
+        if (
+          typeof jq ===
+          "function"
+        ) {
+          jq(control)
+            .val(controlValue);
+        } else {
+          control.value =
+            controlValue;
+        }
+      } else if (
+        control.type ===
+        "checkbox"
+      ) {
+        if (
+          typeof jq ===
+          "function"
+        ) {
+          jq(control)
+            .prop(
+              "checked",
+              enabled
+            );
+        } else {
+          control.checked =
+            enabled;
+        }
+      }
+
+      uiSynchronized =
+        true;
+    }
+  }
+
+  console.log(
+    "applyPcRollBuff:",
+    {
+      characterId:
+        String(characterId),
+      buff,
+      enabled,
+      value,
+      uiSynchronized,
+      rollBuffs:
+        nextBuffs
+    }
+  );
+
+  return {
+    characterId:
+      String(characterId),
+    buff,
+    enabled,
+    value,
+    rollBuffs:
+      nextBuffs
+  };
+}
+
+
+function avttApplyPcRollBuff(
+  cmd
+) {
+  const {
+    characterId
+  } =
+    avttGetSelectedPcContext();
+
+  const buff =
+    String(
+      cmd.buff ||
+      ""
+    ).trim();
+
+  if (!buff) {
+    throw new Error(
+      "A roll buff name is required."
+    );
+  }
+
+  const value =
+    cmd.value === undefined ||
+    cmd.value === null
+      ? null
+      : String(cmd.value);
+
+  const enabled =
+    cmd.enabled !== false &&
+    value !== "0";
+
+  const storageKey =
+    "rollBuffs" +
+    characterId;
+
+  let currentBuffs = [];
+
+  try {
+    const stored =
+      JSON.parse(
+        localStorage.getItem(
+          storageKey
+        ) ||
+        "[]"
+      );
+
+    if (Array.isArray(stored)) {
+      currentBuffs =
+        stored;
+    }
+  } catch {
+    currentBuffs = [];
+  }
+
+  const nextBuffs =
+    currentBuffs.filter(entry => {
+      if (Array.isArray(entry)) {
+        return (
+          String(entry[0]) !==
+          buff
+        );
+      }
+
+      return (
+        String(entry) !==
+        buff
+      );
+    });
+
+  if (enabled) {
+    if (
+      value !== null &&
+      value !== "" &&
+      value !== "on"
+    ) {
+      nextBuffs.push([
+        buff,
+        value
+      ]);
+    } else {
+      nextBuffs.push(
+        buff
+      );
+    }
+  }
+
+  localStorage.setItem(
+    storageKey,
+    JSON.stringify(
+      nextBuffs
+    )
+  );
+
+  const characterFrame =
+    [
+      ...document.querySelectorAll(
+        "#sheet iframe"
+      )
+    ].find(frame => {
+      const sheetUrl =
+        String(
+          frame.getAttribute(
+            "data-sheet_url"
+          ) ||
+          frame.getAttribute(
+            "src"
+          ) ||
+          frame.src ||
+          ""
+        );
+
+      return sheetUrl.includes(
+        `/characters/${characterId}`
+      );
+    }) ||
+    null;
+
+  let uiSynchronized =
+    false;
+
+  if (
+    characterFrame?.contentWindow
+  ) {
+    const characterWindow =
+      characterFrame.contentWindow;
+
+    characterWindow.rollBuffs =
+      [...nextBuffs];
+
+    const control =
+      characterWindow.document
+        .getElementById(
+          `buff_${buff}`
+        );
+
+    const jq =
+      characterWindow.jQuery ||
+      characterWindow.$;
+
+    if (control) {
+      if (
+        control.tagName ===
+        "SELECT"
+      ) {
+        const controlValue =
+          enabled
+            ? value || "0"
+            : "0";
+
+        if (
+          typeof jq ===
+          "function"
+        ) {
+          jq(control)
+            .val(controlValue);
+        } else {
+          control.value =
+            controlValue;
+        }
+      } else if (
+        control.type ===
+        "checkbox"
+      ) {
+        if (
+          typeof jq ===
+          "function"
+        ) {
+          jq(control)
+            .prop(
+              "checked",
+              enabled
+            );
+        } else {
+          control.checked =
+            enabled;
+        }
+      }
+
+      uiSynchronized =
+        true;
+    }
+  }
+
+  console.log(
+    "applyPcRollBuff:",
+    {
+      characterId:
+        String(characterId),
+      buff,
+      enabled,
+      value,
+      uiSynchronized,
+      rollBuffs:
+        nextBuffs
+    }
+  );
+
+  return {
+    characterId:
+      String(characterId),
+    buff,
+    enabled,
+    value,
+    rollBuffs:
+      nextBuffs
+  };
+}
+
 window.addEventListener("message", (event) => {
   if (event.data?.type !== "AVTT_BRIDGE_ROLL") return;
 
@@ -5262,6 +6355,213 @@ window.addEventListener("message", (event) => {
         auraVisible: token.options.auraVisible
       });
     });
+
+    return;
+  }
+
+  if (
+    cmd.command ===
+      "applyPcRollBuff"
+  ) {
+    try {
+      avttApplyPcRollBuff(
+        cmd
+      );
+    } catch (error) {
+      console.error(
+        "applyPcRollBuff: update failed",
+        {
+          buff:
+            cmd.buff,
+
+          value:
+            cmd.value,
+
+          enabled:
+            cmd.enabled,
+
+          error
+        }
+      );
+    }
+
+    return;
+  }
+
+  if (
+    cmd.command ===
+      "refreshPcRollBuffCatalog"
+  ) {
+    try {
+      const catalog =
+        avttGetPcRollBuffCatalog();
+
+      window.postMessage(
+        {
+          type:
+            "AVTT_ROLL_BUFF_CATALOG",
+
+          catalog
+        },
+        "*"
+      );
+
+      console.log(
+        "Published Roll Buff catalog",
+        {
+          categoryCount:
+            catalog.categoryCount,
+
+          buffCount:
+            catalog.buffCount
+        }
+      );
+    } catch (error) {
+      console.error(
+        "refreshPcRollBuffCatalog failed",
+        error
+      );
+    }
+
+    return;
+  }
+
+  if (
+    cmd.command ===
+      "refreshPcRollBuffCatalog"
+  ) {
+    try {
+      const catalog =
+        avttGetPcRollBuffCatalog();
+
+      window.postMessage(
+        {
+          type:
+            "AVTT_ROLL_BUFF_CATALOG",
+
+          catalog
+        },
+        "*"
+      );
+
+      console.log(
+        "Published Roll Buff catalog",
+        {
+          categoryCount:
+            catalog.categoryCount,
+
+          buffCount:
+            catalog.buffCount
+        }
+      );
+    } catch (error) {
+      console.error(
+        "refreshPcRollBuffCatalog failed",
+        error
+      );
+    }
+
+    return;
+  }
+
+  if (
+    cmd.command ===
+      "refreshPcRollBuffCatalog"
+  ) {
+    try {
+      const catalog =
+        avttGetPcRollBuffCatalog();
+
+      window.postMessage(
+        {
+          type:
+            "AVTT_ROLL_BUFF_CATALOG",
+
+          catalog
+        },
+        "*"
+      );
+
+      console.log(
+        "Published Roll Buff catalog",
+        {
+          categoryCount:
+            catalog.categoryCount,
+
+          buffCount:
+            catalog.buffCount
+        }
+      );
+    } catch (error) {
+      console.error(
+        "refreshPcRollBuffCatalog failed",
+        error
+      );
+    }
+
+    return;
+  }
+
+  if (
+    cmd.command ===
+      "refreshPcRollBuffCatalog"
+  ) {
+    try {
+      const catalog =
+        avttGetPcRollBuffCatalog();
+
+      window.postMessage(
+        {
+          type:
+            "AVTT_ROLL_BUFF_CATALOG",
+
+          catalog
+        },
+        "*"
+      );
+
+      console.log(
+        "Published Roll Buff catalog",
+        {
+          categoryCount:
+            catalog.categoryCount,
+
+          buffCount:
+            catalog.buffCount
+        }
+      );
+    } catch (error) {
+      console.error(
+        "refreshPcRollBuffCatalog failed",
+        error
+      );
+    }
+
+    return;
+  }
+
+  if (
+    cmd.command ===
+      "applyPcRollSetting"
+  ) {
+    try {
+      avttApplyPcRollSetting(
+        cmd
+      );
+    } catch (error) {
+      console.error(
+        "applyPcRollSetting: update failed",
+        {
+          setting:
+            cmd.setting,
+
+          value:
+            cmd.value,
+
+          error
+        }
+      );
+    }
 
     return;
   }
