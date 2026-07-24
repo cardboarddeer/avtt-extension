@@ -72,35 +72,3 @@ window.addEventListener("message", (event) => {
     );
   });
 });
-
-window.addEventListener("message", (event) => {
-  if (event.source !== window) return;
-
-  if (
-    event.data?.type !==
-    "AVTT_ROLL_BUFF_CATALOG"
-  ) {
-    return;
-  }
-
-  fetch(
-    "http://localhost:3000/roll-buff-catalog",
-    {
-      method: "POST",
-
-      headers: {
-        "Content-Type":
-          "application/json"
-      },
-
-      body: JSON.stringify(
-        event.data.catalog
-      )
-    }
-  ).catch(error => {
-    console.error(
-      "Failed to upload Roll Buff catalog:",
-      error
-    );
-  });
-});

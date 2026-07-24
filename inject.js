@@ -3314,14 +3314,50 @@ function avttApplyPcRollSetting(
 
 
 function avttGetPcRollBuffCatalog() {
-  const sheetFrame =
+  const iframeCandidates = [
     document.querySelector(
       "#sheet iframe"
-    );
+    ),
+    ...document.querySelectorAll(
+      "iframe"
+    )
+  ].filter(
+    (frame, index, frames) =>
+      frame &&
+      frames.indexOf(frame) === index
+  );
 
-  if (!sheetFrame?.contentDocument) {
+  const sheetFrame =
+    iframeCandidates.find(frame => {
+      try {
+        const frameDocument =
+          frame.contentDocument;
+
+        const frameWindow =
+          frame.contentWindow;
+
+        return Boolean(
+          frameDocument &&
+          (
+            typeof frameWindow
+              ?.rebuild_buffs ===
+              "function" ||
+            frameDocument.querySelector(
+              "[data-buff]"
+            ) ||
+            frameDocument.querySelector(
+              "#avtt-buff-options"
+            )
+          )
+        );
+      } catch {
+        return false;
+      }
+    });
+
+  if (!sheetFrame) {
     throw new Error(
-      "Open a player character sheet before refreshing the Roll Buff catalog."
+      "Could not find the open player character sheet or its Roll Buff controls."
     );
   }
 
@@ -3330,6 +3366,15 @@ function avttGetPcRollBuffCatalog() {
 
   const sheetWindow =
     sheetFrame.contentWindow;
+
+  if (
+    !sheetDocument ||
+    !sheetWindow
+  ) {
+    throw new Error(
+      "The player character sheet is not ready yet."
+    );
+  }
 
   if (
     typeof sheetWindow
@@ -6467,120 +6512,6 @@ window.addEventListener("message", (event) => {
 
           error
         }
-      );
-    }
-
-    return;
-  }
-
-  if (
-    cmd.command ===
-      "refreshPcRollBuffCatalog"
-  ) {
-    try {
-      const catalog =
-        avttGetPcRollBuffCatalog();
-
-      window.postMessage(
-        {
-          type:
-            "AVTT_ROLL_BUFF_CATALOG",
-
-          catalog
-        },
-        "*"
-      );
-
-      console.log(
-        "Published Roll Buff catalog",
-        {
-          categoryCount:
-            catalog.categoryCount,
-
-          buffCount:
-            catalog.buffCount
-        }
-      );
-    } catch (error) {
-      console.error(
-        "refreshPcRollBuffCatalog failed",
-        error
-      );
-    }
-
-    return;
-  }
-
-  if (
-    cmd.command ===
-      "refreshPcRollBuffCatalog"
-  ) {
-    try {
-      const catalog =
-        avttGetPcRollBuffCatalog();
-
-      window.postMessage(
-        {
-          type:
-            "AVTT_ROLL_BUFF_CATALOG",
-
-          catalog
-        },
-        "*"
-      );
-
-      console.log(
-        "Published Roll Buff catalog",
-        {
-          categoryCount:
-            catalog.categoryCount,
-
-          buffCount:
-            catalog.buffCount
-        }
-      );
-    } catch (error) {
-      console.error(
-        "refreshPcRollBuffCatalog failed",
-        error
-      );
-    }
-
-    return;
-  }
-
-  if (
-    cmd.command ===
-      "refreshPcRollBuffCatalog"
-  ) {
-    try {
-      const catalog =
-        avttGetPcRollBuffCatalog();
-
-      window.postMessage(
-        {
-          type:
-            "AVTT_ROLL_BUFF_CATALOG",
-
-          catalog
-        },
-        "*"
-      );
-
-      console.log(
-        "Published Roll Buff catalog",
-        {
-          categoryCount:
-            catalog.categoryCount,
-
-          buffCount:
-            catalog.buffCount
-        }
-      );
-    } catch (error) {
-      console.error(
-        "refreshPcRollBuffCatalog failed",
-        error
       );
     }
 
