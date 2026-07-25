@@ -6735,56 +6735,137 @@ window.addEventListener("message", async (event) => {
   }
 
   if (cmd.command === "toggleVisionType") {
-    const allowedSenses = new Set([
-      "vision",
-      "truesight",
-      "devilsight"
-    ]);
+    void (async () => {
+      const allowedSenses = new Set([
+        "vision",
+        "truesight",
+        "devilsight"
+      ]);
 
-    const sense = String(cmd.sense || "");
+      const sense = String(cmd.sense || "");
 
-    if (!allowedSenses.has(sense)) {
-      console.warn("toggleVisionType: invalid sense", sense);
-      return;
-    }
+      if (!allowedSenses.has(sense)) {
+        console.warn(
+          "toggleVisionType: invalid sense",
+          sense
+        );
 
-    const feet = String(cmd.feet ?? "0");
-    const color = String(
-      cmd.color || "rgba(142, 142, 142, 1)"
-    );
+        return;
+      }
 
-    CURRENTLY_SELECTED_TOKENS.forEach(id => {
-      const token = window.TOKEN_OBJECTS?.[id];
-      if (!token) return;
+      if (cmd.feetPrompt) {
+        const promptedFeet =
+          await avttShowPrompt({
+            title:
+              cmd.feetPrompt.title ??
+              "Vision Radius",
 
-      const current = token.options[sense] || {
-        feet: "0",
-        color
-      };
+            label:
+              cmd.feetPrompt.label,
 
-      const alreadyApplied =
-        Number(current.feet || 0) > 0 &&
-        String(current.feet) === feet &&
-        String(current.color || "") === color;
+            placeholder:
+              cmd.feetPrompt.placeholder,
 
-      token.options[sense] = alreadyApplied
-        ? {
-            ...current,
-            feet: "0"
-          }
-        : {
-            feet,
+            defaultValue:
+              cmd.feetPrompt.defaultValue ??
+              cmd.feet,
+
+            min:
+              cmd.feetPrompt.min,
+
+            max:
+              cmd.feetPrompt.max,
+
+            okText:
+              cmd.feetPrompt.okText,
+
+            cancelText:
+              cmd.feetPrompt.cancelText
+          });
+
+        if (promptedFeet === null) {
+          console.log(
+            "toggleVisionType: cancelled by user"
+          );
+
+          return;
+        }
+
+        cmd.feet =
+          promptedFeet;
+      }
+
+      const feetNumber =
+        Number(cmd.feet ?? 0);
+
+      if (
+        !Number.isFinite(feetNumber) ||
+        feetNumber < 0
+      ) {
+        console.warn(
+          "toggleVisionType: invalid feet",
+          cmd.feet
+        );
+
+        return;
+      }
+
+      const feet =
+        String(feetNumber);
+
+      const color = String(
+        cmd.color ||
+        "rgba(142, 142, 142, 1)"
+      );
+
+      CURRENTLY_SELECTED_TOKENS.forEach(id => {
+        const token =
+          window.TOKEN_OBJECTS?.[id];
+
+        if (!token) return;
+
+        const current =
+          token.options[sense] || {
+            feet: "0",
             color
           };
 
-      token.place_sync_persist();
+        const alreadyApplied =
+          Number(current.feet || 0) > 0 &&
+          String(current.feet) === feet &&
+          String(current.color || "") === color;
 
-      console.log("toggleVisionType:", {
-        token: token.options?.name,
-        sense,
-        alreadyApplied,
-        value: token.options[sense]
+        token.options[sense] =
+          alreadyApplied
+            ? {
+                ...current,
+                feet: "0"
+              }
+            : {
+                feet,
+                color
+              };
+
+        token.place_sync_persist();
+
+        console.log(
+          "toggleVisionType:",
+          {
+            token:
+              token.options?.name,
+
+            sense,
+            alreadyApplied,
+            value:
+              token.options[sense]
+          }
+        );
       });
+    })().catch(error => {
+      console.error(
+        "toggleVisionType failed:",
+        error
+      );
     });
 
     return;
