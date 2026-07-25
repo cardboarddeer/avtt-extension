@@ -5663,8 +5663,146 @@ async function avttDispatchPcStatEffect(
   return true;
 }
 
+function avttEnsurePromptStyles() {
+  if (
+    document.getElementById(
+      "avtt-prompt-styles"
+    )
+  ) {
+    return;
+  }
+
+  const style =
+    document.createElement("style");
+
+  style.id =
+    "avtt-prompt-styles";
+
+  style.textContent = `
+    #avtt-prompt-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 2147483647;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      box-sizing: border-box;
+      background: rgba(0, 0, 0, 0.68);
+      backdrop-filter: blur(2px);
+    }
+
+    .avtt-prompt-modal {
+      width: min(360px, 100%);
+      padding: 24px;
+      box-sizing: border-box;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 12px;
+      background: #202225;
+      color: #f4f4f4;
+      box-shadow:
+        0 18px 50px rgba(0, 0, 0, 0.55);
+      font-family:
+        Arial,
+        sans-serif;
+    }
+
+    .avtt-prompt-title {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 700;
+      line-height: 1.3;
+    }
+
+    .avtt-prompt-label {
+      display: block;
+      margin: 18px 0 7px;
+      color: #d7d7d7;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
+    .avtt-prompt-input {
+      display: block;
+      width: 100%;
+      height: 42px;
+      padding: 8px 11px;
+      box-sizing: border-box;
+      border: 1px solid #555a61;
+      border-radius: 7px;
+      outline: none;
+      background: #151719;
+      color: #ffffff;
+      font: inherit;
+      font-size: 17px;
+    }
+
+    .avtt-prompt-input:focus {
+      border-color: #58a6ff;
+      box-shadow:
+        0 0 0 3px rgba(88, 166, 255, 0.22);
+    }
+
+    .avtt-prompt-input::placeholder {
+      color: #7e848b;
+    }
+
+    .avtt-prompt-error {
+      min-height: 18px;
+      margin-top: 7px;
+      color: #ff9696;
+      font-size: 13px;
+      line-height: 18px;
+    }
+
+    .avtt-prompt-buttons {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .avtt-prompt-button {
+      min-width: 88px;
+      padding: 9px 15px;
+      border: 1px solid transparent;
+      border-radius: 7px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .avtt-prompt-button:hover {
+      filter: brightness(1.08);
+    }
+
+    .avtt-prompt-button:active {
+      transform: translateY(1px);
+    }
+
+    .avtt-prompt-button-cancel {
+      border-color: #555a61;
+      background: #30343a;
+      color: #f1f1f1;
+    }
+
+    .avtt-prompt-button-ok {
+      background: #2f81f7;
+      color: #ffffff;
+    }
+  `;
+
+  (
+    document.head ||
+    document.documentElement
+  ).appendChild(style);
+}
+
 async function avttPrompt(options = {}) {
   console.log("avttPrompt()", options);
+
+  avttEnsurePromptStyles();
 
   const existingOverlay =
     document.getElementById(
@@ -5679,42 +5817,22 @@ async function avttPrompt(options = {}) {
   overlay.id =
     "avtt-prompt-overlay";
 
-  Object.assign(
-    overlay.style,
-    {
-      position: "fixed",
-      inset: "0",
-      zIndex: "2147483647",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      background:
-        "rgba(0, 0, 0, 0.65)"
-    }
-  );
-
   const modal =
     document.createElement("div");
 
-  Object.assign(
-    modal.style,
-    {
-      padding: "24px",
-      borderRadius: "8px",
-      background: "#222",
-      color: "#fff",
-      fontFamily: "Arial, sans-serif",
-      fontSize: "18px"
-    }
-  );
+  modal.className =
+    "avtt-prompt-modal";
 
   const title =
     document.createElement("div");
 
+  title.className =
+    "avtt-prompt-title";
+
   title.textContent =
     String(
       options.title ||
-      "AVTT Prompt Test"
+      "AVTT Prompt"
     );
 
   modal.appendChild(title);
@@ -5723,24 +5841,20 @@ async function avttPrompt(options = {}) {
     const label =
       document.createElement("label");
 
+    label.className =
+      "avtt-prompt-label";
+
     label.textContent =
       String(options.label);
-
-    Object.assign(
-      label.style,
-      {
-        display: "block",
-        marginTop: "16px",
-        marginBottom: "6px",
-        fontSize: "14px"
-      }
-    );
 
     modal.appendChild(label);
   }
 
   const input =
     document.createElement("input");
+
+  input.className =
+    "avtt-prompt-input";
 
   input.type = "number";
 
@@ -5767,64 +5881,58 @@ async function avttPrompt(options = {}) {
       String(options.max);
   }
 
-  Object.assign(
-    input.style,
-    {
-      display: "block",
-      width: "180px",
-      marginTop: "16px",
-      padding: "8px",
-      fontSize: "18px"
-    }
-  );
-
   modal.appendChild(input);
 
   const errorMessage =
     document.createElement("div");
 
-  Object.assign(
-    errorMessage.style,
-    {
-      minHeight: "18px",
-      marginTop: "6px",
-      fontSize: "13px",
-      color: "#ff8a8a"
-    }
-  );
+  errorMessage.className =
+    "avtt-prompt-error";
 
   modal.appendChild(errorMessage);
 
   const buttonRow =
     document.createElement("div");
 
-  Object.assign(
-    buttonRow.style,
-    {
-      display: "flex",
-      gap: "12px",
-      justifyContent: "center",
-      marginTop: "20px"
-    }
-  );
-
-  const okButton =
-    document.createElement("button");
-
-  okButton.textContent = "OK";
+  buttonRow.className =
+    "avtt-prompt-buttons";
 
   const cancelButton =
     document.createElement("button");
 
-  cancelButton.textContent = "Cancel";
+  cancelButton.type = "button";
+
+  cancelButton.className =
+    "avtt-prompt-button " +
+    "avtt-prompt-button-cancel";
+
+  cancelButton.textContent =
+    String(
+      options.cancelText ||
+      "Cancel"
+    );
+
+  const okButton =
+    document.createElement("button");
+
+  okButton.type = "button";
+
+  okButton.className =
+    "avtt-prompt-button " +
+    "avtt-prompt-button-ok";
+
+  okButton.textContent =
+    String(
+      options.okText ||
+      "OK"
+    );
 
   buttonRow.append(
-    okButton,
-    cancelButton
+    cancelButton,
+    okButton
   );
 
   modal.appendChild(buttonRow);
-
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
 
