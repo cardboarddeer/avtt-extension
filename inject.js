@@ -5780,6 +5780,21 @@ async function avttPrompt(options = {}) {
 
   modal.appendChild(input);
 
+  const errorMessage =
+    document.createElement("div");
+
+  Object.assign(
+    errorMessage.style,
+    {
+      minHeight: "18px",
+      marginTop: "6px",
+      fontSize: "13px",
+      color: "#ff8a8a"
+    }
+  );
+
+  modal.appendChild(errorMessage);
+
   const buttonRow =
     document.createElement("div");
 
@@ -5838,9 +5853,54 @@ async function avttPrompt(options = {}) {
     };
 
     const submit = () => {
-      finish(
-        Number(input.value)
-      );
+      const rawValue =
+        input.value.trim();
+
+      if (rawValue === "") {
+        errorMessage.textContent =
+          "Enter a number.";
+
+        input.focus();
+        return;
+      }
+
+      const value =
+        Number(rawValue);
+
+      if (!Number.isFinite(value)) {
+        errorMessage.textContent =
+          "Enter a valid number.";
+
+        input.focus();
+        input.select();
+        return;
+      }
+
+      if (
+        options.min !== undefined &&
+        value < Number(options.min)
+      ) {
+        errorMessage.textContent =
+          `Value must be at least ${options.min}.`;
+
+        input.focus();
+        input.select();
+        return;
+      }
+
+      if (
+        options.max !== undefined &&
+        value > Number(options.max)
+      ) {
+        errorMessage.textContent =
+          `Value must be no more than ${options.max}.`;
+
+        input.focus();
+        input.select();
+        return;
+      }
+
+      finish(value);
     };
 
     const cancel = () => {
@@ -5858,6 +5918,13 @@ async function avttPrompt(options = {}) {
         cancel();
       }
     };
+
+    input.addEventListener(
+      "input",
+      () => {
+        errorMessage.textContent = "";
+      }
+    );
 
     okButton.onclick = submit;
     cancelButton.onclick = cancel;
