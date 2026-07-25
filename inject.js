@@ -6053,7 +6053,7 @@ async function avttShowPrompt(options = {}) {
   });
 }
 
-window.addEventListener("message", (event) => {
+window.addEventListener("message", async (event) => {
   if (event.data?.type !== "AVTT_BRIDGE_COMMAND") return;
 
   const cmd = event.data.command;
@@ -6982,6 +6982,51 @@ window.addEventListener("message", (event) => {
   ) {
     void (async () => {
       try {
+        const valuePrompt =
+          cmd.valuePrompt;
+
+        if (valuePrompt) {
+          const promptedValue =
+            await avttShowPrompt({
+              title:
+                valuePrompt.title ??
+                "Enter Value",
+
+              label:
+                valuePrompt.label,
+
+              placeholder:
+                valuePrompt.placeholder,
+
+              defaultValue:
+                valuePrompt.defaultValue ??
+                cmd.value,
+
+              min:
+                valuePrompt.min,
+
+              max:
+                valuePrompt.max,
+
+              okText:
+                valuePrompt.okText,
+
+              cancelText:
+                valuePrompt.cancelText
+            });
+
+          if (promptedValue === null) {
+            console.log(
+              "applyPcStatEffect: cancelled by user"
+            );
+
+            return;
+          }
+
+          cmd.value =
+            promptedValue;
+        }
+
         await avttDispatchPcStatEffect(
           cmd
         );
