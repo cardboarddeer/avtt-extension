@@ -7647,6 +7647,240 @@ window.addEventListener("message", async (event) => {
     return;
   }
 
+  if (cmd.command === "rollWithPrompt") {
+    void (async () => {
+      try {
+        const allowedDiceTypes =
+          new Set([
+            "d4",
+            "d6",
+            "d8",
+            "d10",
+            "d12",
+            "d20",
+            "d100"
+          ]);
+
+        const diceType =
+          allowedDiceTypes.has(
+            String(
+              cmd.diceType || "d20"
+            ).toLowerCase()
+          )
+            ? String(
+                cmd.diceType || "d20"
+              ).toLowerCase()
+            : "d20";
+
+        let numberOfDice =
+          Number(
+            cmd.numberOfDice ?? 1
+          );
+
+        let bonus =
+          Number(
+            cmd.bonus ?? 0
+          );
+
+        if (cmd.numberOfDicePrompt) {
+          const promptedNumberOfDice =
+            await avttShowPrompt({
+              title:
+                cmd.numberOfDicePrompt.title ??
+                "Number of Dice",
+
+              label:
+                cmd.numberOfDicePrompt.label ??
+                "Enter the number of dice",
+
+              placeholder:
+                cmd.numberOfDicePrompt.placeholder ??
+                "1",
+
+              defaultValue:
+                cmd.numberOfDicePrompt.defaultValue ??
+                (
+                  Number.isFinite(numberOfDice)
+                    ? numberOfDice
+                    : 1
+                ),
+
+              min:
+                cmd.numberOfDicePrompt.min ??
+                1,
+
+              okText:
+                cmd.numberOfDicePrompt.okText,
+
+              cancelText:
+                cmd.numberOfDicePrompt.cancelText
+            });
+
+          if (
+            promptedNumberOfDice === null
+          ) {
+            console.log(
+              "rollWithPrompt: cancelled while entering number of dice"
+            );
+
+            return;
+          }
+
+          numberOfDice =
+            Number(
+              promptedNumberOfDice
+            );
+        }
+
+        if (cmd.bonusPrompt) {
+          const promptedBonus =
+            await avttShowPrompt({
+              title:
+                cmd.bonusPrompt.title ??
+                "Roll Bonus",
+
+              label:
+                cmd.bonusPrompt.label ??
+                "Enter the roll bonus",
+
+              placeholder:
+                cmd.bonusPrompt.placeholder ??
+                "0",
+
+              defaultValue:
+                cmd.bonusPrompt.defaultValue ??
+                (
+                  Number.isFinite(bonus)
+                    ? bonus
+                    : 0
+                ),
+
+              okText:
+                cmd.bonusPrompt.okText,
+
+              cancelText:
+                cmd.bonusPrompt.cancelText
+            });
+
+          if (
+            promptedBonus === null
+          ) {
+            console.log(
+              "rollWithPrompt: cancelled while entering bonus"
+            );
+
+            return;
+          }
+
+          bonus =
+            Number(
+              promptedBonus
+            );
+        }
+
+        if (
+          !Number.isFinite(numberOfDice) ||
+          numberOfDice < 1
+        ) {
+          console.error(
+            "rollWithPrompt: number of dice must be at least 1",
+            {
+              numberOfDice
+            }
+          );
+
+          return;
+        }
+
+        if (
+          !Number.isFinite(bonus)
+        ) {
+          console.error(
+            "rollWithPrompt: bonus must be a number",
+            {
+              bonus
+            }
+          );
+
+          return;
+        }
+
+        numberOfDice =
+          Math.max(
+            1,
+            Math.floor(
+              numberOfDice
+            )
+          );
+
+        const normalizedBonus =
+          Math.trunc(
+            bonus
+          );
+
+        const expression =
+          `${numberOfDice}${diceType}` +
+          (
+            normalizedBonus > 0
+              ? `+${normalizedBonus}`
+              : normalizedBonus < 0
+                ? `${normalizedBonus}`
+                : ""
+          );
+
+        let rollType =
+          cmd.rollType ||
+          "check";
+
+        if (
+          rollType === "damage" &&
+          cmd.damageType
+        ) {
+          rollType =
+            String(
+              cmd.damageType
+            ).toLowerCase() +
+            " damage";
+        }
+
+        const roll = {
+          expression,
+
+          rollType,
+
+          action:
+            String(
+              cmd.action ||
+              "Stream Deck"
+            ).trim() ||
+            "Stream Deck"
+        };
+
+        console.log(
+          "rollWithPrompt sending roll:",
+          roll
+        );
+
+        window.postMessage(
+          {
+            type:
+              "AVTT_BRIDGE_ROLL",
+
+            roll
+          },
+          "*"
+        );
+      } catch (error) {
+        console.error(
+          "rollWithPrompt failed",
+          error
+        );
+      }
+    })();
+
+    return;
+  }
+
   if (cmd.command === "rollSelectedAbility") {
     (async () => {
       try {
