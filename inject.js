@@ -5714,6 +5714,41 @@ async function avttPrompt(options = {}) {
       "AVTT Prompt Test"
     );
 
+  const input =
+    document.createElement("input");
+
+  input.type = "number";
+
+  input.value =
+    String(
+      options.defaultValue ??
+      options.value ??
+      ""
+    );
+
+  if (options.min !== undefined) {
+    input.min =
+      String(options.min);
+  }
+
+  if (options.max !== undefined) {
+    input.max =
+      String(options.max);
+  }
+
+  Object.assign(
+    input.style,
+    {
+      display: "block",
+      width: "180px",
+      marginTop: "16px",
+      padding: "8px",
+      fontSize: "18px"
+    }
+  );
+
+  modal.appendChild(input);
+
   const buttonRow =
     document.createElement("div");
 
@@ -5750,8 +5785,11 @@ async function avttPrompt(options = {}) {
   return new Promise(resolve => {
 
     okButton.onclick = () => {
+      const value =
+        Number(input.value);
+
       overlay.remove();
-      resolve(true);
+      resolve(value);
     };
 
     cancelButton.onclick = () => {
