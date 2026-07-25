@@ -5717,11 +5717,12 @@ async function avttPrompt(options = {}) {
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
 
-  setTimeout(() => {
-    overlay.remove();
-  }, 2000);
-
-  return null;
+  return new Promise(resolve => {
+    setTimeout(() => {
+      overlay.remove();
+      resolve(null);
+    }, 2000);
+  });
 }
 
 window.addEventListener("message", (event) => {
