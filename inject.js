@@ -5799,8 +5799,8 @@ function avttEnsurePromptStyles() {
   ).appendChild(style);
 }
 
-async function avttPrompt(options = {}) {
-  console.log("avttPrompt()", options);
+async function avttShowPrompt(options = {}) {
+  console.log("avttShowPrompt()", options);
 
   avttEnsurePromptStyles();
 
