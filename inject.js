@@ -5782,21 +5782,59 @@ async function avttPrompt(options = {}) {
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
 
-  return new Promise(resolve => {
+  requestAnimationFrame(() => {
+    input.focus();
+    input.select();
+  });
 
-    okButton.onclick = () => {
-      const value =
-        Number(input.value);
+  return new Promise(resolve => {
+    let finished = false;
+
+    const finish = value => {
+      if (finished) {
+        return;
+      }
+
+      finished = true;
+
+      document.removeEventListener(
+        "keydown",
+        handleKeydown
+      );
 
       overlay.remove();
       resolve(value);
     };
 
-    cancelButton.onclick = () => {
-      overlay.remove();
-      resolve(null);
+    const submit = () => {
+      finish(
+        Number(input.value)
+      );
     };
 
+    const cancel = () => {
+      finish(null);
+    };
+
+    const handleKeydown = event => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        submit();
+      }
+
+      if (event.key === "Escape") {
+        event.preventDefault();
+        cancel();
+      }
+    };
+
+    okButton.onclick = submit;
+    cancelButton.onclick = cancel;
+
+    document.addEventListener(
+      "keydown",
+      handleKeydown
+    );
   });
 }
 
