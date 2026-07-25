@@ -5708,16 +5708,47 @@ async function avttPrompt(options = {}) {
     }
   );
 
-  modal.textContent =
+  const title =
+    document.createElement("div");
+
+  title.textContent =
     String(
       options.title ||
       "AVTT Prompt Test"
     );
 
+  modal.appendChild(title);
+
+  if (options.label) {
+    const label =
+      document.createElement("label");
+
+    label.textContent =
+      String(options.label);
+
+    Object.assign(
+      label.style,
+      {
+        display: "block",
+        marginTop: "16px",
+        marginBottom: "6px",
+        fontSize: "14px"
+      }
+    );
+
+    modal.appendChild(label);
+  }
+
   const input =
     document.createElement("input");
 
   input.type = "number";
+
+  input.placeholder =
+    String(
+      options.placeholder ??
+      ""
+    );
 
   input.value =
     String(
