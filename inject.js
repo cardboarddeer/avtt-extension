@@ -6037,6 +6037,15 @@ async function avttPrompt(options = {}) {
     okButton.onclick = submit;
     cancelButton.onclick = cancel;
 
+    overlay.addEventListener(
+      "click",
+      event => {
+        if (event.target === overlay) {
+          cancel();
+        }
+      }
+    );
+
     document.addEventListener(
       "keydown",
       handleKeydown
