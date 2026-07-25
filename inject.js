@@ -5714,14 +5714,51 @@ async function avttPrompt(options = {}) {
       "AVTT Prompt Test"
     );
 
+  const buttonRow =
+    document.createElement("div");
+
+  Object.assign(
+    buttonRow.style,
+    {
+      display: "flex",
+      gap: "12px",
+      justifyContent: "center",
+      marginTop: "20px"
+    }
+  );
+
+  const okButton =
+    document.createElement("button");
+
+  okButton.textContent = "OK";
+
+  const cancelButton =
+    document.createElement("button");
+
+  cancelButton.textContent = "Cancel";
+
+  buttonRow.append(
+    okButton,
+    cancelButton
+  );
+
+  modal.appendChild(buttonRow);
+
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
 
   return new Promise(resolve => {
-    setTimeout(() => {
+
+    okButton.onclick = () => {
+      overlay.remove();
+      resolve(true);
+    };
+
+    cancelButton.onclick = () => {
       overlay.remove();
       resolve(null);
-    }, 2000);
+    };
+
   });
 }
 
