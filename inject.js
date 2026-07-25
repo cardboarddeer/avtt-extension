@@ -5663,6 +5663,12 @@ async function avttDispatchPcStatEffect(
   return true;
 }
 
+async function avttPrompt(options = {}) {
+  console.log("avttPrompt()", options);
+
+  return null;
+}
+
 window.addEventListener("message", (event) => {
   if (event.data?.type !== "AVTT_BRIDGE_COMMAND") return;
 
