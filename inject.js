@@ -5666,6 +5666,61 @@ async function avttDispatchPcStatEffect(
 async function avttPrompt(options = {}) {
   console.log("avttPrompt()", options);
 
+  const existingOverlay =
+    document.getElementById(
+      "avtt-prompt-overlay"
+    );
+
+  existingOverlay?.remove();
+
+  const overlay =
+    document.createElement("div");
+
+  overlay.id =
+    "avtt-prompt-overlay";
+
+  Object.assign(
+    overlay.style,
+    {
+      position: "fixed",
+      inset: "0",
+      zIndex: "2147483647",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      background:
+        "rgba(0, 0, 0, 0.65)"
+    }
+  );
+
+  const modal =
+    document.createElement("div");
+
+  Object.assign(
+    modal.style,
+    {
+      padding: "24px",
+      borderRadius: "8px",
+      background: "#222",
+      color: "#fff",
+      fontFamily: "Arial, sans-serif",
+      fontSize: "18px"
+    }
+  );
+
+  modal.textContent =
+    String(
+      options.title ||
+      "AVTT Prompt Test"
+    );
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  setTimeout(() => {
+    overlay.remove();
+  }, 2000);
+
   return null;
 }
 
