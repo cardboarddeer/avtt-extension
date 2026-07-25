@@ -6236,109 +6236,187 @@ window.addEventListener("message", async (event) => {
   }
 
   if (cmd.command === "modifySelectedTokenHp") {
-    const mode = String(cmd.mode || "");
-    const amount = Math.max(
-      0,
-      Number(cmd.amount || 0)
-    );
+    void (async () => {
+      const mode =
+        String(cmd.mode || "");
 
-    const allowedModes = new Set([
-      "damage",
-      "heal",
-      "tempHp"
-    ]);
+      const allowedModes = new Set([
+        "damage",
+        "heal",
+        "tempHp"
+      ]);
 
-    if (!allowedModes.has(mode)) {
-      console.warn(
-        "modifySelectedTokenHp: invalid mode",
-        mode
-      );
-      return;
-    }
+      if (!allowedModes.has(mode)) {
+        console.warn(
+          "modifySelectedTokenHp: invalid mode",
+          mode
+        );
 
-    if (!Number.isFinite(amount) || amount <= 0) {
-      console.warn(
-        "modifySelectedTokenHp: invalid amount",
-        cmd.amount
-      );
-      return;
-    }
+        return;
+      }
 
-    const selectedIds = [
-      ...(CURRENTLY_SELECTED_TOKENS || [])
-    ];
+      if (cmd.amountPrompt) {
+        const promptedAmount =
+          await avttShowPrompt({
+            title:
+              cmd.amountPrompt.title ??
+              "Enter Amount",
 
-    if (!selectedIds.length) {
-      console.warn(
-        "modifySelectedTokenHp: no selected tokens"
-      );
-      return;
-    }
+            label:
+              cmd.amountPrompt.label,
 
-    selectedIds.forEach(id => {
-      const token =
-        window.TOKEN_OBJECTS?.[id];
+            placeholder:
+              cmd.amountPrompt.placeholder,
 
-      if (!token) return;
+            defaultValue:
+              cmd.amountPrompt.defaultValue ??
+              cmd.amount,
 
-      const before = {
-        hp: Number(token.hp || 0),
-        tempHp: Number(token.tempHp || 0),
-        maxHp: Number(token.maxHp || 0)
-      };
+            min:
+              cmd.amountPrompt.min,
 
-      if (mode === "damage") {
-        let remainingDamage = amount;
+            max:
+              cmd.amountPrompt.max,
 
-        if (before.tempHp > 0) {
-          const absorbed = Math.min(
-            before.tempHp,
-            remainingDamage
+            okText:
+              cmd.amountPrompt.okText,
+
+            cancelText:
+              cmd.amountPrompt.cancelText
+          });
+
+        if (promptedAmount === null) {
+          console.log(
+            "modifySelectedTokenHp: cancelled by user"
           );
 
-          token.tempHp =
-            before.tempHp - absorbed;
-
-          remainingDamage -= absorbed;
+          return;
         }
 
-        if (remainingDamage > 0) {
-          token.hp = Math.max(
-            0,
-            before.hp - remainingDamage
-          );
-        }
+        cmd.amount =
+          promptedAmount;
       }
 
-      if (mode === "heal") {
-        token.hp = Math.min(
-          before.maxHp,
-          before.hp + amount
+      const amount = Math.max(
+        0,
+        Number(cmd.amount || 0)
+      );
+
+      if (
+        !Number.isFinite(amount) ||
+        amount <= 0
+      ) {
+        console.warn(
+          "modifySelectedTokenHp: invalid amount",
+          cmd.amount
         );
+
+        return;
       }
 
-      if (mode === "tempHp") {
-        token.tempHp = Math.max(
-          before.tempHp,
-          amount
+      const selectedIds = [
+        ...(CURRENTLY_SELECTED_TOKENS || [])
+      ];
+
+      if (!selectedIds.length) {
+        console.warn(
+          "modifySelectedTokenHp: no selected tokens"
         );
+
+        return;
       }
 
-      token.place_sync_persist();
+      selectedIds.forEach(id => {
+        const token =
+          window.TOKEN_OBJECTS?.[id];
 
-      console.log(
-        "modifySelectedTokenHp:",
-        {
-          token: token.options?.name,
-          mode,
-          amount,
-          before,
-          after: {
-            hp: Number(token.hp || 0),
-            tempHp: Number(token.tempHp || 0),
-            maxHp: Number(token.maxHp || 0)
+        if (!token) return;
+
+        const before = {
+          hp:
+            Number(token.hp || 0),
+
+          tempHp:
+            Number(token.tempHp || 0),
+
+          maxHp:
+            Number(token.maxHp || 0)
+        };
+
+        if (mode === "damage") {
+          let remainingDamage =
+            amount;
+
+          if (before.tempHp > 0) {
+            const absorbed =
+              Math.min(
+                before.tempHp,
+                remainingDamage
+              );
+
+            token.tempHp =
+              before.tempHp -
+              absorbed;
+
+            remainingDamage -=
+              absorbed;
+          }
+
+          if (remainingDamage > 0) {
+            token.hp =
+              Math.max(
+                0,
+                before.hp -
+                remainingDamage
+              );
           }
         }
+
+        if (mode === "heal") {
+          token.hp =
+            Math.min(
+              before.maxHp,
+              before.hp + amount
+            );
+        }
+
+        if (mode === "tempHp") {
+          token.tempHp =
+            Math.max(
+              before.tempHp,
+              amount
+            );
+        }
+
+        token.place_sync_persist();
+
+        console.log(
+          "modifySelectedTokenHp:",
+          {
+            token:
+              token.options?.name,
+
+            mode,
+            amount,
+            before,
+
+            after: {
+              hp:
+                Number(token.hp || 0),
+
+              tempHp:
+                Number(token.tempHp || 0),
+
+              maxHp:
+                Number(token.maxHp || 0)
+            }
+          }
+        );
+      });
+    })().catch(error => {
+      console.error(
+        "modifySelectedTokenHp failed:",
+        error
       );
     });
 
