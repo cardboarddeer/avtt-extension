@@ -5986,6 +5986,73 @@ async function avttShowPrompt(options = {}) {
     modal.appendChild(label);
   }
 
+  if (options.requiresValue === false) {
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    const autoCloseMs =
+      Number.isFinite(
+        Number(options.autoCloseMs)
+      )
+        ? Math.max(
+            0,
+            Number(options.autoCloseMs)
+          )
+        : 2000;
+
+    return new Promise(resolve => {
+      let finished = false;
+      let timerId = null;
+
+      const finish = () => {
+        if (finished) {
+          return;
+        }
+
+        finished = true;
+
+        if (timerId !== null) {
+          window.clearTimeout(timerId);
+        }
+
+        document.removeEventListener(
+          "keydown",
+          handleKeydown
+        );
+
+        overlay.remove();
+        resolve(null);
+      };
+
+      const handleKeydown = event => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          finish();
+        }
+      };
+
+      overlay.addEventListener(
+        "click",
+        event => {
+          if (event.target === overlay) {
+            finish();
+          }
+        }
+      );
+
+      document.addEventListener(
+        "keydown",
+        handleKeydown
+      );
+
+      timerId =
+        window.setTimeout(
+          finish,
+          autoCloseMs
+        );
+    });
+  }
+
   const input =
     document.createElement("input");
 
