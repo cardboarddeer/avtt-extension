@@ -6309,6 +6309,93 @@ async function avttShowPrompt(options = {}) {
   });
 }
 
+async function avttPersistPcHp({
+  token,
+  hp,
+  tempHp
+}) {
+  const characterId =
+    Number(
+      token.options?.characterId
+    );
+
+  if (
+    !Number.isFinite(characterId) ||
+    characterId <= 0
+  ) {
+    throw new Error(
+      "The selected PC has no valid character ID"
+    );
+  }
+
+  const maxHp =
+    Number(token.maxHp || 0);
+
+  const removedHitPoints =
+    Math.max(
+      0,
+      Math.round(
+        maxHp - hp
+      )
+    );
+
+  const temporaryHitPoints =
+    Math.max(
+      0,
+      Math.round(tempHp)
+    );
+
+  const result =
+    await avttDdbCharacterRequest({
+      url:
+        "https://character-service.dndbeyond.com/character/v5/life/hp/damage-taken",
+
+      method:
+        "PUT",
+
+      payload: {
+        characterId,
+        removedHitPoints,
+        temporaryHitPoints
+      }
+    });
+
+  token.hp =
+    hp;
+
+  token.tempHp =
+    temporaryHitPoints;
+
+  token.place_sync_persist();
+
+  console.log(
+    "modifySelectedTokenHp: direct D&D Beyond HP update succeeded",
+    {
+      character:
+        token.options?.name,
+
+      characterId,
+      hp,
+      maxHp,
+      removedHitPoints,
+      temporaryHitPoints,
+
+      status:
+        result.status,
+
+      response:
+        result.responseText.slice(
+          0,
+          500
+        )
+    }
+  );
+
+  avttRefreshDdbCharacter(
+    characterId
+  );
+}
+
 async function avttModifySelectedTokenHp(
   options = {}
 ) {
@@ -6404,12 +6491,12 @@ async function avttModifySelectedTokenHp(
     return false;
   }
 
-  selectedIds.forEach(id => {
+  for (const id of selectedIds) {
     const token =
       window.TOKEN_OBJECTS?.[id];
 
     if (!token) {
-      return;
+      continue;
     }
 
     const before = {
@@ -6423,6 +6510,12 @@ async function avttModifySelectedTokenHp(
         Number(token.maxHp || 0)
     };
 
+    let nextHp =
+      before.hp;
+
+    let nextTempHp =
+      before.tempHp;
+
     if (mode === "damage") {
       let remainingDamage =
         amount;
@@ -6434,7 +6527,7 @@ async function avttModifySelectedTokenHp(
             remainingDamage
           );
 
-        token.tempHp =
+        nextTempHp =
           before.tempHp -
           absorbed;
 
@@ -6443,7 +6536,7 @@ async function avttModifySelectedTokenHp(
       }
 
       if (remainingDamage > 0) {
-        token.hp =
+        nextHp =
           Math.max(
             0,
             before.hp -
@@ -6453,7 +6546,7 @@ async function avttModifySelectedTokenHp(
     }
 
     if (mode === "heal") {
-      token.hp =
+      nextHp =
         Math.min(
           before.maxHp,
           before.hp + amount
@@ -6461,14 +6554,34 @@ async function avttModifySelectedTokenHp(
     }
 
     if (mode === "tempHp") {
-      token.tempHp =
+      nextTempHp =
         Math.max(
           before.tempHp,
           amount
         );
     }
 
-    token.place_sync_persist();
+    const isPc =
+      token.options?.itemType ===
+        "pc";
+
+    if (isPc) {
+      await avttPersistPcHp({
+        token,
+        hp:
+          nextHp,
+        tempHp:
+          nextTempHp
+      });
+    } else {
+      token.hp =
+        nextHp;
+
+      token.tempHp =
+        nextTempHp;
+
+      token.place_sync_persist();
+    }
 
     console.log(
       "modifySelectedTokenHp:",
@@ -6478,21 +6591,26 @@ async function avttModifySelectedTokenHp(
 
         mode,
         amount,
+        persistence:
+          isPc
+            ? "dndBeyond"
+            : "aboveVtt",
+
         before,
 
         after: {
           hp:
-            Number(token.hp || 0),
+            nextHp,
 
           tempHp:
-            Number(token.tempHp || 0),
+            nextTempHp,
 
           maxHp:
-            Number(token.maxHp || 0)
+            before.maxHp
         }
       }
     );
-  });
+  }
 
   return true;
 }
