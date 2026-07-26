@@ -1604,11 +1604,53 @@ setInterval(async () => {
   }
 }, 2000);
 
+let avttLastCombatTurnSignature = null;
+
 setInterval(async () => {
   try {
+    const combatState =
+      await getCombatState();
+
+    const initiativeTracker =
+      combatState.initiativeTracker;
+
+    const currentParticipant =
+      initiativeTracker?.current;
+
+    if (!currentParticipant) {
+      avttLastCombatTurnSignature = null;
+    } else {
+      const turnSignature = [
+        initiativeTracker.round ?? "",
+        currentParticipant.tokenId ??
+          currentParticipant.name,
+        initiativeTracker.activeIndex
+      ].join(":");
+
+      if (
+        avttLastCombatTurnSignature !== null &&
+        turnSignature !==
+          avttLastCombatTurnSignature
+      ) {
+        console.log(
+          "AVTT combat turn changed:",
+          {
+            round:
+              initiativeTracker.round,
+
+            participant:
+              currentParticipant
+          }
+        );
+      }
+
+      avttLastCombatTurnSignature =
+        turnSignature;
+    }
+
     window.postMessage({
       type: "AVTT_COMBAT_STATE",
-      combatState: await getCombatState()
+      combatState
     }, "*");
   } catch (err) {
     console.warn("Combat state error:", err);
