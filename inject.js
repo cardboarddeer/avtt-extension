@@ -1607,14 +1607,17 @@ setInterval(async () => {
 const AVTT_COMBAT_REMINDERS = [
   {
     id: "phase-1-bellsona-turn-start",
-    name: "Bellsona Test Reminder",
+    name: "Bellsona Healing Reminder",
     enabled: true,
     triggerType: "turnStart",
     triggerTarget: "Bellsona (Gin)",
     roundInterval: null,
     message:
-      "Combat reminder engine matched Bellsona's turn.",
-    actionType: "notify"
+      "Enter the amount of healing to apply.",
+    actionType: "heal",
+    target: "selected",
+    amount: null,
+    promptForAmount: true
   }
 ];
 
@@ -1688,6 +1691,36 @@ async function avttExecuteCombatReminder(
 
         requiresValue: false,
         autoCloseMs: 2000
+      });
+      break;
+
+    case "heal":
+      await avttModifySelectedTokenHp({
+        mode: "heal",
+
+        amount:
+          reminder.amount,
+
+        amountPrompt:
+          reminder.promptForAmount
+            ? {
+                title:
+                  reminder.name ||
+                  "Healing Reminder",
+
+                label:
+                  reminder.message ||
+                  "Enter the healing amount.",
+
+                defaultValue:
+                  reminder.amount,
+
+                min: 1,
+
+                okText:
+                  "Heal"
+              }
+            : undefined
       });
       break;
 
