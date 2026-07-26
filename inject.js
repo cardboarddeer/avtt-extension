@@ -7109,24 +7109,65 @@ window.addEventListener("message", async (event) => {
     cmd.command ===
       "applyPcRollSetting"
   ) {
-    try {
-      avttApplyPcRollSetting(
-        cmd
-      );
-    } catch (error) {
-      console.error(
-        "applyPcRollSetting: update failed",
-        {
-          setting:
-            cmd.setting,
+    void (async () => {
+      try {
+        const valuePrompt =
+          cmd.valuePrompt;
 
-          value:
-            cmd.value,
+        if (valuePrompt) {
+          const promptedValue =
+            await avttShowPrompt({
+              title:
+                valuePrompt.title ??
+                "Roll Setting Value",
 
-          error
+              label:
+                valuePrompt.label,
+
+              placeholder:
+                valuePrompt.placeholder,
+
+              defaultValue:
+                valuePrompt.defaultValue ??
+                cmd.value,
+
+              okText:
+                valuePrompt.okText,
+
+              cancelText:
+                valuePrompt.cancelText
+            });
+
+          if (promptedValue === null) {
+            console.log(
+              "applyPcRollSetting: cancelled by user"
+            );
+
+            return;
+          }
+
+          cmd.value =
+            String(promptedValue).trim();
         }
-      );
-    }
+
+        avttApplyPcRollSetting(
+          cmd
+        );
+      } catch (error) {
+        console.error(
+          "applyPcRollSetting: update failed",
+          {
+            setting:
+              cmd.setting,
+
+            value:
+              cmd.value,
+
+            error
+          }
+        );
+      }
+    })();
 
     return;
   }
