@@ -1614,7 +1614,7 @@ const AVTT_COMBAT_REMINDERS = [
     roundInterval: null,
     message:
       "Combat reminder engine matched Bellsona's turn.",
-    actionType: "popup"
+    actionType: "notify"
   }
 ];
 
@@ -1676,7 +1676,7 @@ async function avttExecuteCombatReminder(
   );
 
   switch (reminder.actionType) {
-    case "popup":
+    case "notify":
       await avttShowPrompt({
         title:
           reminder.name ||
