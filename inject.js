@@ -6276,6 +6276,194 @@ async function avttShowPrompt(options = {}) {
   });
 }
 
+async function avttModifySelectedTokenHp(
+  options = {}
+) {
+  const mode =
+    String(options.mode || "");
+
+  const allowedModes = new Set([
+    "damage",
+    "heal",
+    "tempHp"
+  ]);
+
+  if (!allowedModes.has(mode)) {
+    console.warn(
+      "modifySelectedTokenHp: invalid mode",
+      mode
+    );
+
+    return false;
+  }
+
+  let requestedAmount =
+    options.amount;
+
+  if (options.amountPrompt) {
+    const promptedAmount =
+      await avttShowPrompt({
+        title:
+          options.amountPrompt.title ??
+          "Enter Amount",
+
+        label:
+          options.amountPrompt.label,
+
+        placeholder:
+          options.amountPrompt.placeholder,
+
+        defaultValue:
+          options.amountPrompt.defaultValue ??
+          requestedAmount,
+
+        min:
+          options.amountPrompt.min,
+
+        max:
+          options.amountPrompt.max,
+
+        okText:
+          options.amountPrompt.okText,
+
+        cancelText:
+          options.amountPrompt.cancelText
+      });
+
+    if (promptedAmount === null) {
+      console.log(
+        "modifySelectedTokenHp: cancelled by user"
+      );
+
+      return false;
+    }
+
+    requestedAmount =
+      promptedAmount;
+  }
+
+  const amount = Math.max(
+    0,
+    Number(requestedAmount || 0)
+  );
+
+  if (
+    !Number.isFinite(amount) ||
+    amount <= 0
+  ) {
+    console.warn(
+      "modifySelectedTokenHp: invalid amount",
+      requestedAmount
+    );
+
+    return false;
+  }
+
+  const selectedIds = [
+    ...(CURRENTLY_SELECTED_TOKENS || [])
+  ];
+
+  if (!selectedIds.length) {
+    console.warn(
+      "modifySelectedTokenHp: no selected tokens"
+    );
+
+    return false;
+  }
+
+  selectedIds.forEach(id => {
+    const token =
+      window.TOKEN_OBJECTS?.[id];
+
+    if (!token) {
+      return;
+    }
+
+    const before = {
+      hp:
+        Number(token.hp || 0),
+
+      tempHp:
+        Number(token.tempHp || 0),
+
+      maxHp:
+        Number(token.maxHp || 0)
+    };
+
+    if (mode === "damage") {
+      let remainingDamage =
+        amount;
+
+      if (before.tempHp > 0) {
+        const absorbed =
+          Math.min(
+            before.tempHp,
+            remainingDamage
+          );
+
+        token.tempHp =
+          before.tempHp -
+          absorbed;
+
+        remainingDamage -=
+          absorbed;
+      }
+
+      if (remainingDamage > 0) {
+        token.hp =
+          Math.max(
+            0,
+            before.hp -
+            remainingDamage
+          );
+      }
+    }
+
+    if (mode === "heal") {
+      token.hp =
+        Math.min(
+          before.maxHp,
+          before.hp + amount
+        );
+    }
+
+    if (mode === "tempHp") {
+      token.tempHp =
+        Math.max(
+          before.tempHp,
+          amount
+        );
+    }
+
+    token.place_sync_persist();
+
+    console.log(
+      "modifySelectedTokenHp:",
+      {
+        token:
+          token.options?.name,
+
+        mode,
+        amount,
+        before,
+
+        after: {
+          hp:
+            Number(token.hp || 0),
+
+          tempHp:
+            Number(token.tempHp || 0),
+
+          maxHp:
+            Number(token.maxHp || 0)
+        }
+      }
+    );
+  });
+
+  return true;
+}
+
 window.addEventListener("message", async (event) => {
   if (event.data?.type !== "AVTT_BRIDGE_COMMAND") return;
 
@@ -6459,184 +6647,16 @@ window.addEventListener("message", async (event) => {
   }
 
   if (cmd.command === "modifySelectedTokenHp") {
-    void (async () => {
-      const mode =
-        String(cmd.mode || "");
+    void avttModifySelectedTokenHp({
+      mode:
+        cmd.mode,
 
-      const allowedModes = new Set([
-        "damage",
-        "heal",
-        "tempHp"
-      ]);
+      amount:
+        cmd.amount,
 
-      if (!allowedModes.has(mode)) {
-        console.warn(
-          "modifySelectedTokenHp: invalid mode",
-          mode
-        );
-
-        return;
-      }
-
-      if (cmd.amountPrompt) {
-        const promptedAmount =
-          await avttShowPrompt({
-            title:
-              cmd.amountPrompt.title ??
-              "Enter Amount",
-
-            label:
-              cmd.amountPrompt.label,
-
-            placeholder:
-              cmd.amountPrompt.placeholder,
-
-            defaultValue:
-              cmd.amountPrompt.defaultValue ??
-              cmd.amount,
-
-            min:
-              cmd.amountPrompt.min,
-
-            max:
-              cmd.amountPrompt.max,
-
-            okText:
-              cmd.amountPrompt.okText,
-
-            cancelText:
-              cmd.amountPrompt.cancelText
-          });
-
-        if (promptedAmount === null) {
-          console.log(
-            "modifySelectedTokenHp: cancelled by user"
-          );
-
-          return;
-        }
-
-        cmd.amount =
-          promptedAmount;
-      }
-
-      const amount = Math.max(
-        0,
-        Number(cmd.amount || 0)
-      );
-
-      if (
-        !Number.isFinite(amount) ||
-        amount <= 0
-      ) {
-        console.warn(
-          "modifySelectedTokenHp: invalid amount",
-          cmd.amount
-        );
-
-        return;
-      }
-
-      const selectedIds = [
-        ...(CURRENTLY_SELECTED_TOKENS || [])
-      ];
-
-      if (!selectedIds.length) {
-        console.warn(
-          "modifySelectedTokenHp: no selected tokens"
-        );
-
-        return;
-      }
-
-      selectedIds.forEach(id => {
-        const token =
-          window.TOKEN_OBJECTS?.[id];
-
-        if (!token) return;
-
-        const before = {
-          hp:
-            Number(token.hp || 0),
-
-          tempHp:
-            Number(token.tempHp || 0),
-
-          maxHp:
-            Number(token.maxHp || 0)
-        };
-
-        if (mode === "damage") {
-          let remainingDamage =
-            amount;
-
-          if (before.tempHp > 0) {
-            const absorbed =
-              Math.min(
-                before.tempHp,
-                remainingDamage
-              );
-
-            token.tempHp =
-              before.tempHp -
-              absorbed;
-
-            remainingDamage -=
-              absorbed;
-          }
-
-          if (remainingDamage > 0) {
-            token.hp =
-              Math.max(
-                0,
-                before.hp -
-                remainingDamage
-              );
-          }
-        }
-
-        if (mode === "heal") {
-          token.hp =
-            Math.min(
-              before.maxHp,
-              before.hp + amount
-            );
-        }
-
-        if (mode === "tempHp") {
-          token.tempHp =
-            Math.max(
-              before.tempHp,
-              amount
-            );
-        }
-
-        token.place_sync_persist();
-
-        console.log(
-          "modifySelectedTokenHp:",
-          {
-            token:
-              token.options?.name,
-
-            mode,
-            amount,
-            before,
-
-            after: {
-              hp:
-                Number(token.hp || 0),
-
-              tempHp:
-                Number(token.tempHp || 0),
-
-              maxHp:
-                Number(token.maxHp || 0)
-            }
-          }
-        );
-      });
-    })().catch(error => {
+      amountPrompt:
+        cmd.amountPrompt
+    }).catch(error => {
       console.error(
         "modifySelectedTokenHp failed:",
         error
