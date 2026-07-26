@@ -1663,6 +1663,25 @@ function avttGetMatchingCombatReminders(
   });
 }
 
+function avttHandleCombatEvent(combatEvent) {
+  const matchingReminders =
+    avttGetMatchingCombatReminders(
+      combatEvent
+    );
+
+  matchingReminders.forEach(
+    reminder => {
+      console.log(
+        "AVTT combat reminder matched:",
+        {
+          reminder,
+          combatEvent
+        }
+      );
+    }
+  );
+}
+
 let avttLastCombatTurnSignature = null;
 
 setInterval(async () => {
@@ -1704,21 +1723,8 @@ setInterval(async () => {
           combatEvent
         );
 
-        const matchingReminders =
-          avttGetMatchingCombatReminders(
-            combatEvent
-          );
-
-        matchingReminders.forEach(
-          reminder => {
-            console.log(
-              "AVTT combat reminder matched:",
-              {
-                reminder,
-                combatEvent
-              }
-            );
-          }
+        avttHandleCombatEvent(
+          combatEvent
         );
       }
 
