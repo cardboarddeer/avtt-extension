@@ -1663,6 +1663,19 @@ function avttGetMatchingCombatReminders(
   });
 }
 
+function avttExecuteCombatReminder(
+  reminder,
+  combatEvent
+) {
+  console.log(
+    "AVTT combat reminder matched:",
+    {
+      reminder,
+      combatEvent
+    }
+  );
+}
+
 function avttHandleCombatEvent(combatEvent) {
   const matchingReminders =
     avttGetMatchingCombatReminders(
@@ -1671,12 +1684,9 @@ function avttHandleCombatEvent(combatEvent) {
 
   matchingReminders.forEach(
     reminder => {
-      console.log(
-        "AVTT combat reminder matched:",
-        {
-          reminder,
-          combatEvent
-        }
+      avttExecuteCombatReminder(
+        reminder,
+        combatEvent
       );
     }
   );
