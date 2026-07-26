@@ -1614,7 +1614,7 @@ const AVTT_COMBAT_REMINDERS = [
     roundInterval: null,
     message:
       "Combat reminder engine matched Bellsona's turn.",
-    actionType: "console"
+    actionType: "popup"
   }
 ];
 
@@ -1663,7 +1663,7 @@ function avttGetMatchingCombatReminders(
   });
 }
 
-function avttExecuteCombatReminder(
+async function avttExecuteCombatReminder(
   reminder,
   combatEvent
 ) {
@@ -1674,6 +1674,26 @@ function avttExecuteCombatReminder(
       combatEvent
     }
   );
+
+  switch (reminder.actionType) {
+    case "popup":
+      await avttShowPrompt({
+        title:
+          reminder.name ||
+          "Combat Reminder",
+
+        label:
+          reminder.message ||
+          "Reminder triggered.",
+
+        requiresValue: false,
+        autoCloseMs: 2000
+      });
+      break;
+
+    default:
+      break;
+  }
 }
 
 function avttHandleCombatEvent(combatEvent) {
