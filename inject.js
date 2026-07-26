@@ -1604,6 +1604,65 @@ setInterval(async () => {
   }
 }, 2000);
 
+const AVTT_COMBAT_REMINDERS = [
+  {
+    id: "phase-1-bellsona-turn-start",
+    name: "Bellsona Test Reminder",
+    enabled: true,
+    triggerType: "turnStart",
+    triggerTarget: "Bellsona (Gin)",
+    roundInterval: null,
+    message:
+      "Combat reminder engine matched Bellsona's turn.",
+    actionType: "console"
+  }
+];
+
+function avttGetMatchingCombatReminders(
+  combatEvent,
+  reminders = AVTT_COMBAT_REMINDERS
+) {
+  return reminders.filter(reminder => {
+    if (!reminder?.enabled) {
+      return false;
+    }
+
+    if (
+      reminder.triggerType !==
+      combatEvent.type
+    ) {
+      return false;
+    }
+
+    if (
+      reminder.triggerTarget &&
+      reminder.triggerTarget !==
+        combatEvent.participant?.name
+    ) {
+      return false;
+    }
+
+    if (
+      Number.isFinite(
+        reminder.roundInterval
+      ) &&
+      reminder.roundInterval > 0 &&
+      (
+        !Number.isFinite(
+          combatEvent.round
+        ) ||
+        combatEvent.round %
+          reminder.roundInterval !==
+          0
+      )
+    ) {
+      return false;
+    }
+
+    return true;
+  });
+}
+
 let avttLastCombatTurnSignature = null;
 
 setInterval(async () => {
@@ -1632,14 +1691,33 @@ setInterval(async () => {
         turnSignature !==
           avttLastCombatTurnSignature
       ) {
+        const combatEvent = {
+          type: "turnStart",
+          round:
+            initiativeTracker.round,
+          participant:
+            currentParticipant
+        };
+
         console.log(
           "AVTT combat turn changed:",
-          {
-            round:
-              initiativeTracker.round,
+          combatEvent
+        );
 
-            participant:
-              currentParticipant
+        const matchingReminders =
+          avttGetMatchingCombatReminders(
+            combatEvent
+          );
+
+        matchingReminders.forEach(
+          reminder => {
+            console.log(
+              "AVTT combat reminder matched:",
+              {
+                reminder,
+                combatEvent
+              }
+            );
           }
         );
       }
