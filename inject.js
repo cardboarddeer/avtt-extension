@@ -1604,22 +1604,7 @@ setInterval(async () => {
   }
 }, 2000);
 
-const AVTT_COMBAT_REMINDERS = [
-  {
-    id: "phase-1-bellsona-turn-start",
-    name: "Bellsona Healing Reminder",
-    enabled: true,
-    triggerType: "turnStart",
-    triggerTarget: "Bellsona (Gin)",
-    roundInterval: null,
-    message:
-      "Enter the amount of healing to apply.",
-    actionType: "heal",
-    target: "selected",
-    amount: null,
-    promptForAmount: true
-  }
-];
+const AVTT_COMBAT_REMINDERS = [];
 
 function avttGetMatchingCombatReminders(
   combatEvent,
