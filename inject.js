@@ -6611,6 +6611,121 @@ window.addEventListener("message", async (event) => {
     return;
   }
 
+  if (cmd.command === "createAoe") {
+    try {
+      const allowedShapes = [
+        "circle",
+        "square",
+        "cone",
+        "line"
+      ];
+
+      const shape =
+        String(cmd.shape || "circle")
+          .trim()
+          .toLowerCase();
+
+      if (!allowedShapes.includes(shape)) {
+        console.warn(
+          "createAoe: unsupported shape",
+          shape
+        );
+        return;
+      }
+
+      const style =
+        String(cmd.style || "acid")
+          .trim()
+          .toLowerCase();
+
+      const requestedSize =
+        Number(cmd.size);
+
+      const size =
+        Number.isFinite(requestedSize) &&
+        requestedSize > 0
+          ? requestedSize
+          : 1;
+
+      const requestedLineWidth =
+        Number(cmd.lineWidth);
+
+      const lineWidth =
+        Number.isFinite(requestedLineWidth) &&
+        requestedLineWidth > 0
+          ? requestedLineWidth
+          : 1;
+
+      const name =
+        String(cmd.name || "")
+          .trim();
+
+      const placement =
+        String(cmd.placement || "center")
+          .trim()
+          .toLowerCase();
+
+      const options =
+        window.build_aoe_token_options?.(
+          style,
+          shape,
+          size,
+          name,
+          lineWidth
+        );
+
+      if (!options) {
+        console.warn(
+          "createAoe: AboveVTT AOE builder unavailable"
+        );
+        return;
+      }
+
+      if (placement === "selected") {
+        const tokenId =
+          window.CURRENTLY_SELECTED_TOKENS?.[0];
+
+        const token =
+          window.TOKEN_OBJECTS?.[tokenId];
+
+        if (!token) {
+          console.warn(
+            "createAoe: no selected token"
+          );
+          return;
+        }
+
+        window.place_aoe_token_at_token?.(
+          options,
+          token
+        );
+      } else {
+        window.place_aoe_token_in_centre?.(
+          options
+        );
+      }
+
+      console.log(
+        "createAoe:",
+        {
+          style,
+          shape,
+          size,
+          lineWidth,
+          name,
+          placement
+        }
+      );
+    } catch (error) {
+      console.error(
+        "createAoe failed:",
+        error
+      );
+    }
+
+    return;
+  }
+
   if (cmd.command === "modifySelectedTokenHp") {
     void avttModifySelectedTokenHp({
       mode:
