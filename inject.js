@@ -5750,6 +5750,44 @@ function avttEnsurePromptStyles() {
       color: #7e848b;
     }
 
+    .avtt-prompt-fields {
+      display: grid;
+      gap: 14px;
+      margin-top: 18px;
+    }
+
+    .avtt-prompt-field {
+      display: grid;
+      gap: 7px;
+    }
+
+    .avtt-prompt-field-label {
+      color: #d7d7d7;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
+    .avtt-prompt-select {
+      display: block;
+      width: 100%;
+      height: 42px;
+      padding: 8px 11px;
+      box-sizing: border-box;
+      border: 1px solid #555a61;
+      border-radius: 7px;
+      outline: none;
+      background: #151719;
+      color: #ffffff;
+      font: inherit;
+      font-size: 15px;
+    }
+
+    .avtt-prompt-select:focus {
+      border-color: #58a6ff;
+      box-shadow:
+        0 0 0 3px rgba(88, 166, 255, 0.22);
+    }
+
     .avtt-prompt-error {
       min-height: 18px;
       margin-top: 7px;
@@ -5917,6 +5955,385 @@ async function avttShowPrompt(options = {}) {
           finish,
           autoCloseMs
         );
+    });
+  }
+
+  const promptFields =
+    Array.isArray(options.fields)
+      ? options.fields.filter(
+          field =>
+            field &&
+            typeof field === "object" &&
+            String(field.key || "").trim()
+        )
+      : [];
+
+  if (promptFields.length > 0) {
+    const fieldsContainer =
+      document.createElement("div");
+
+    fieldsContainer.className =
+      "avtt-prompt-fields";
+
+    const fieldControls =
+      new Map();
+
+    promptFields.forEach(field => {
+      const key =
+        String(field.key).trim();
+
+      const fieldRow =
+        document.createElement("div");
+
+      fieldRow.className =
+        "avtt-prompt-field";
+
+      const fieldLabel =
+        document.createElement("label");
+
+      fieldLabel.className =
+        "avtt-prompt-field-label";
+
+      fieldLabel.textContent =
+        String(
+          field.label ||
+          key
+        );
+
+      let control;
+
+      if (field.type === "select") {
+        control =
+          document.createElement("select");
+
+        control.className =
+          "avtt-prompt-select";
+
+        const choices =
+          Array.isArray(field.options)
+            ? field.options
+            : [];
+
+        choices.forEach(choice => {
+          const option =
+            document.createElement("option");
+
+          if (
+            choice &&
+            typeof choice === "object"
+          ) {
+            option.value =
+              String(
+                choice.value ?? ""
+              );
+
+            option.textContent =
+              String(
+                choice.label ??
+                choice.value ??
+                ""
+              );
+          } else {
+            option.value =
+              String(choice);
+
+            option.textContent =
+              String(choice);
+          }
+
+          control.appendChild(option);
+        });
+
+        control.value =
+          String(
+            field.defaultValue ??
+            field.value ??
+            ""
+          );
+      } else {
+        control =
+          document.createElement("input");
+
+        control.className =
+          "avtt-prompt-input";
+
+        control.type =
+          field.type === "text"
+            ? "text"
+            : "number";
+
+        control.placeholder =
+          String(
+            field.placeholder ??
+            ""
+          );
+
+        control.value =
+          String(
+            field.defaultValue ??
+            field.value ??
+            ""
+          );
+
+        if (field.min !== undefined) {
+          control.min =
+            String(field.min);
+        }
+
+        if (field.max !== undefined) {
+          control.max =
+            String(field.max);
+        }
+
+        if (field.step !== undefined) {
+          control.step =
+            String(field.step);
+        }
+      }
+
+      fieldRow.append(
+        fieldLabel,
+        control
+      );
+
+      fieldsContainer.appendChild(
+        fieldRow
+      );
+
+      fieldControls.set(
+        key,
+        {
+          field,
+          control
+        }
+      );
+    });
+
+    modal.appendChild(fieldsContainer);
+
+    const errorMessage =
+      document.createElement("div");
+
+    errorMessage.className =
+      "avtt-prompt-error";
+
+    modal.appendChild(errorMessage);
+
+    const buttonRow =
+      document.createElement("div");
+
+    buttonRow.className =
+      "avtt-prompt-buttons";
+
+    const cancelButton =
+      document.createElement("button");
+
+    cancelButton.type = "button";
+
+    cancelButton.className =
+      "avtt-prompt-button " +
+      "avtt-prompt-button-cancel";
+
+    cancelButton.textContent =
+      String(
+        options.cancelText ||
+        "Cancel"
+      );
+
+    const okButton =
+      document.createElement("button");
+
+    okButton.type = "button";
+
+    okButton.className =
+      "avtt-prompt-button " +
+      "avtt-prompt-button-ok";
+
+    okButton.textContent =
+      String(
+        options.okText ||
+        "OK"
+      );
+
+    buttonRow.append(
+      cancelButton,
+      okButton
+    );
+
+    modal.appendChild(buttonRow);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    const firstControl =
+      fieldControls.values()
+        .next()
+        .value
+        ?.control;
+
+    requestAnimationFrame(() => {
+      firstControl?.focus();
+
+      if (
+        firstControl instanceof
+        HTMLInputElement
+      ) {
+        firstControl.select();
+      }
+    });
+
+    return new Promise(resolve => {
+      let finished = false;
+
+      const finish = value => {
+        if (finished) {
+          return;
+        }
+
+        finished = true;
+
+        document.removeEventListener(
+          "keydown",
+          handleKeydown
+        );
+
+        overlay.remove();
+        resolve(value);
+      };
+
+      const submit = () => {
+        const result = {};
+
+        for (
+          const [
+            key,
+            {
+              field,
+              control
+            }
+          ] of fieldControls
+        ) {
+          const rawValue =
+            String(control.value ?? "")
+              .trim();
+
+          if (
+            field.required !== false &&
+            rawValue === ""
+          ) {
+            errorMessage.textContent =
+              `${field.label || key} is required.`;
+
+            control.focus();
+            return;
+          }
+
+          if (
+            field.type === "number" ||
+            (
+              field.type !== "select" &&
+              field.type !== "text"
+            )
+          ) {
+            const value =
+              Number(rawValue);
+
+            if (!Number.isFinite(value)) {
+              errorMessage.textContent =
+                `${field.label || key} must be a valid number.`;
+
+              control.focus();
+
+              if (
+                control instanceof
+                HTMLInputElement
+              ) {
+                control.select();
+              }
+
+              return;
+            }
+
+            if (
+              field.min !== undefined &&
+              value < Number(field.min)
+            ) {
+              errorMessage.textContent =
+                `${field.label || key} must be at least ${field.min}.`;
+
+              control.focus();
+              return;
+            }
+
+            if (
+              field.max !== undefined &&
+              value > Number(field.max)
+            ) {
+              errorMessage.textContent =
+                `${field.label || key} must be no more than ${field.max}.`;
+
+              control.focus();
+              return;
+            }
+
+            result[key] = value;
+          } else {
+            result[key] = rawValue;
+          }
+        }
+
+        finish(result);
+      };
+
+      const cancel = () => {
+        finish(null);
+      };
+
+      const handleKeydown = event => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          submit();
+        }
+
+        if (event.key === "Escape") {
+          event.preventDefault();
+          cancel();
+        }
+      };
+
+      fieldControls.forEach(
+        ({ control }) => {
+          control.addEventListener(
+            "input",
+            () => {
+              errorMessage.textContent = "";
+            }
+          );
+
+          control.addEventListener(
+            "change",
+            () => {
+              errorMessage.textContent = "";
+            }
+          );
+        }
+      );
+
+      okButton.onclick = submit;
+      cancelButton.onclick = cancel;
+
+      overlay.addEventListener(
+        "click",
+        event => {
+          if (event.target === overlay) {
+            cancel();
+          }
+        }
+      );
+
+      document.addEventListener(
+        "keydown",
+        handleKeydown
+      );
     });
   }
 
@@ -6612,7 +7029,7 @@ window.addEventListener("message", async (event) => {
   }
 
   if (cmd.command === "createAoe") {
-    try {
+    void (async () => {
       const allowedShapes = [
         "circle",
         "square",
@@ -6620,37 +7037,49 @@ window.addEventListener("message", async (event) => {
         "line"
       ];
 
-      const shape =
+      const allowedStyles = [
+        "ACID",
+        "BLUDGEONING",
+        "COLD",
+        "DARKNESS",
+        "DEFAULT",
+        "FIRE",
+        "FORCE",
+        "LIGHTNING",
+        "NATURE",
+        "NECROTIC",
+        "PIERCING",
+        "POISON",
+        "PSYCHIC",
+        "RADIANT",
+        "SLASHING",
+        "THUNDER",
+        "WATER"
+      ];
+
+      let shape =
         String(cmd.shape || "circle")
           .trim()
           .toLowerCase();
 
-      if (!allowedShapes.includes(shape)) {
-        console.warn(
-          "createAoe: unsupported shape",
-          shape
-        );
-        return;
-      }
-
-      const style =
-        String(cmd.style || "acid")
+      let style =
+        String(cmd.style || "DEFAULT")
           .trim()
-          .toLowerCase();
+          .toUpperCase();
 
-      const requestedSize =
+      let requestedSize =
         Number(cmd.size);
 
-      const size =
+      let size =
         Number.isFinite(requestedSize) &&
         requestedSize > 0
           ? requestedSize
           : 1;
 
-      const requestedLineWidth =
+      let requestedLineWidth =
         Number(cmd.lineWidth);
 
-      const lineWidth =
+      let lineWidth =
         Number.isFinite(requestedLineWidth) &&
         requestedLineWidth > 0
           ? requestedLineWidth
@@ -6660,14 +7089,193 @@ window.addEventListener("message", async (event) => {
         String(cmd.name || "")
           .trim();
 
-      const placement =
-        String(cmd.placement || "center")
-          .trim()
-          .toLowerCase();
+      const fields = [];
+
+      if (cmd.promptForShape === true) {
+        fields.push({
+          key:
+            "shape",
+
+          label:
+            "Shape",
+
+          type:
+            "select",
+
+          options:
+            allowedShapes.map(value => ({
+              value,
+              label:
+                value.charAt(0).toUpperCase() +
+                value.slice(1)
+            })),
+
+          defaultValue:
+            allowedShapes.includes(shape)
+              ? shape
+              : "circle"
+        });
+      }
+
+      if (cmd.promptForStyle === true) {
+        fields.push({
+          key:
+            "style",
+
+          label:
+            "Style",
+
+          type:
+            "select",
+
+          options:
+            allowedStyles,
+
+          defaultValue:
+            allowedStyles.includes(style)
+              ? style
+              : "DEFAULT"
+        });
+      }
+
+      if (cmd.promptForSize === true) {
+        fields.push({
+          key:
+            "size",
+
+          label:
+            "Size",
+
+          type:
+            "number",
+
+          min:
+            1,
+
+          step:
+            1,
+
+          defaultValue:
+            size
+        });
+      }
+
+      if (cmd.promptForLineWidth === true) {
+        fields.push({
+          key:
+            "lineWidth",
+
+          label:
+            "Line Width",
+
+          type:
+            "number",
+
+          min:
+            1,
+
+          step:
+            1,
+
+          defaultValue:
+            lineWidth
+        });
+      }
+
+      if (fields.length > 0) {
+        const promptedValues =
+          await avttShowPrompt({
+            title:
+              name ||
+              "Create AOE",
+
+            fields,
+
+            okText:
+              "Create",
+
+            cancelText:
+              "Cancel"
+          });
+
+        if (promptedValues === null) {
+          console.log(
+            "createAoe: cancelled by user"
+          );
+
+          return;
+        }
+
+        if (
+          promptedValues.shape !== undefined
+        ) {
+          shape =
+            String(promptedValues.shape)
+              .trim()
+              .toLowerCase();
+        }
+
+        if (
+          promptedValues.style !== undefined
+        ) {
+          style =
+            String(promptedValues.style)
+              .trim()
+              .toUpperCase();
+        }
+
+        if (
+          promptedValues.size !== undefined
+        ) {
+          requestedSize =
+            Number(promptedValues.size);
+
+          size =
+            Number.isFinite(requestedSize) &&
+            requestedSize > 0
+              ? requestedSize
+              : size;
+        }
+
+        if (
+          promptedValues.lineWidth !== undefined
+        ) {
+          requestedLineWidth =
+            Number(
+              promptedValues.lineWidth
+            );
+
+          lineWidth =
+            Number.isFinite(
+              requestedLineWidth
+            ) &&
+            requestedLineWidth > 0
+              ? requestedLineWidth
+              : lineWidth;
+        }
+      }
+
+      if (!allowedShapes.includes(shape)) {
+        console.warn(
+          "createAoe: unsupported shape",
+          shape
+        );
+
+        return;
+      }
+
+      if (!allowedStyles.includes(style)) {
+        console.warn(
+          "createAoe: unsupported style",
+          style
+        );
+
+        return;
+      }
 
       const options =
         window.build_aoe_token_options?.(
-          style,
+          style.toLowerCase(),
           shape,
           size,
           name,
@@ -6678,23 +7286,22 @@ window.addEventListener("message", async (event) => {
         console.warn(
           "createAoe: AboveVTT AOE builder unavailable"
         );
+
         return;
       }
 
-      if (placement === "selected") {
-        const tokenId =
-          window.CURRENTLY_SELECTED_TOKENS?.[0];
+      const tokenId =
+        window.CURRENTLY_SELECTED_TOKENS?.[0];
 
-        const token =
-          window.TOKEN_OBJECTS?.[tokenId];
+      const token =
+        window.TOKEN_OBJECTS?.[tokenId];
 
-        if (!token) {
-          console.warn(
-            "createAoe: no selected token"
-          );
-          return;
-        }
+      const placement =
+        token
+          ? "selected"
+          : "center";
 
+      if (token) {
         window.place_aoe_token_at_token?.(
           options,
           token
@@ -6716,12 +7323,12 @@ window.addEventListener("message", async (event) => {
           placement
         }
       );
-    } catch (error) {
+    })().catch(error => {
       console.error(
         "createAoe failed:",
         error
       );
-    }
+    });
 
     return;
   }
