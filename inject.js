@@ -7153,7 +7153,7 @@ const AVTT_AOE_STYLES = [
             "size",
 
           label:
-            "Size",
+            "Size (ft)",
 
           type:
             "number",
@@ -7178,7 +7178,7 @@ const AVTT_AOE_STYLES = [
             "lineWidth",
 
           label:
-            "Line Width",
+            "Line Width (ft)",
 
           type:
             "number",
@@ -7290,13 +7290,21 @@ const AVTT_AOE_STYLES = [
           ? ""
           : name;
 
+      const feetPerSquare = 5;
+
+      const sizeSquares =
+        size / feetPerSquare;
+
+      const lineWidthSquares =
+        lineWidth / feetPerSquare;
+
       const options =
         window.build_aoe_token_options?.(
           style.toLowerCase(),
           shape,
-          size,
+          sizeSquares,
           aoeName,
-          lineWidth
+          lineWidthSquares
         );
 
       if (!options) {
@@ -7334,8 +7342,14 @@ const AVTT_AOE_STYLES = [
         {
           style,
           shape,
-          size,
-          lineWidth,
+          sizeFeet:
+            size,
+
+          lineWidthFeet:
+            lineWidth,
+
+          sizeSquares,
+          lineWidthSquares,
           name,
           placement
         }
