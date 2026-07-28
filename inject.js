@@ -7091,7 +7091,10 @@ const AVTT_AOE_STYLES = [
 
       const fields = [];
 
-      if (cmd.promptForShape === true) {
+      if (
+        cmd.promptForValue === true ||
+        cmd.promptForShape === true
+      ) {
         fields.push({
           key:
             "shape",
@@ -7117,7 +7120,10 @@ const AVTT_AOE_STYLES = [
         });
       }
 
-      if (cmd.promptForStyle === true) {
+      if (
+        cmd.promptForValue === true ||
+        cmd.promptForStyle === true
+      ) {
         fields.push({
           key:
             "style",
@@ -7138,7 +7144,10 @@ const AVTT_AOE_STYLES = [
         });
       }
 
-      if (cmd.promptForSize === true) {
+      if (
+        cmd.promptForValue === true ||
+        cmd.promptForSize === true
+      ) {
         fields.push({
           key:
             "size",
@@ -7160,7 +7169,10 @@ const AVTT_AOE_STYLES = [
         });
       }
 
-      if (cmd.promptForLineWidth === true) {
+      if (
+        cmd.promptForValue === true ||
+        cmd.promptForLineWidth === true
+      ) {
         fields.push({
           key:
             "lineWidth",
