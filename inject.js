@@ -7273,12 +7273,17 @@ const AVTT_AOE_STYLES = [
         return;
       }
 
+      const aoeName =
+        style.toLowerCase() === "darkness"
+          ? ""
+          : name;
+
       const options =
         window.build_aoe_token_options?.(
           style.toLowerCase(),
           shape,
           size,
-          name,
+          aoeName,
           lineWidth
         );
 
