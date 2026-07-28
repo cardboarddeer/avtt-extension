@@ -7028,35 +7028,35 @@ window.addEventListener("message", async (event) => {
     return;
   }
 
+const AVTT_AOE_SHAPES = [
+  "circle",
+  "square",
+  "cone",
+  "line"
+];
+
+const AVTT_AOE_STYLES = [
+  "ACID",
+  "BLUDGEONING",
+  "COLD",
+  "DARKNESS",
+  "DEFAULT",
+  "FIRE",
+  "FORCE",
+  "LIGHTNING",
+  "NATURE",
+  "NECROTIC",
+  "PIERCING",
+  "POISON",
+  "PSYCHIC",
+  "RADIANT",
+  "SLASHING",
+  "THUNDER",
+  "WATER"
+];
+
   if (cmd.command === "createAoe") {
     void (async () => {
-      const allowedShapes = [
-        "circle",
-        "square",
-        "cone",
-        "line"
-      ];
-
-      const allowedStyles = [
-        "ACID",
-        "BLUDGEONING",
-        "COLD",
-        "DARKNESS",
-        "DEFAULT",
-        "FIRE",
-        "FORCE",
-        "LIGHTNING",
-        "NATURE",
-        "NECROTIC",
-        "PIERCING",
-        "POISON",
-        "PSYCHIC",
-        "RADIANT",
-        "SLASHING",
-        "THUNDER",
-        "WATER"
-      ];
-
       let shape =
         String(cmd.shape || "circle")
           .trim()
@@ -7103,7 +7103,7 @@ window.addEventListener("message", async (event) => {
             "select",
 
           options:
-            allowedShapes.map(value => ({
+            AVTT_AOE_SHAPES.map(value => ({
               value,
               label:
                 value.charAt(0).toUpperCase() +
@@ -7111,7 +7111,7 @@ window.addEventListener("message", async (event) => {
             })),
 
           defaultValue:
-            allowedShapes.includes(shape)
+            AVTT_AOE_SHAPES.includes(shape)
               ? shape
               : "circle"
         });
@@ -7129,10 +7129,10 @@ window.addEventListener("message", async (event) => {
             "select",
 
           options:
-            allowedStyles,
+            AVTT_AOE_STYLES,
 
           defaultValue:
-            allowedStyles.includes(style)
+            AVTT_AOE_STYLES.includes(style)
               ? style
               : "DEFAULT"
         });
@@ -7255,7 +7255,7 @@ window.addEventListener("message", async (event) => {
         }
       }
 
-      if (!allowedShapes.includes(shape)) {
+      if (!AVTT_AOE_SHAPES.includes(shape)) {
         console.warn(
           "createAoe: unsupported shape",
           shape
@@ -7264,7 +7264,7 @@ window.addEventListener("message", async (event) => {
         return;
       }
 
-      if (!allowedStyles.includes(style)) {
+      if (!AVTT_AOE_STYLES.includes(style)) {
         console.warn(
           "createAoe: unsupported style",
           style
