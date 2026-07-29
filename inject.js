@@ -4,6 +4,11 @@ function tokenToState(
   token,
   pcData = null
 ) {
+  if (pcData && !window.__AVTT_PC_DEBUG__) {
+    window.__AVTT_PC_DEBUG__ = true;
+    console.log("AVTT PC DATA", pcData);
+  }
+
   const hpInfo =
     token.options?.hitPointInfo || {};
 
