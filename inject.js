@@ -8614,7 +8614,7 @@ const AVTT_AOE_STYLES = [
           // Non-D&D effects belong only in custom_conditions.
           // Remove any native duplicate left by older behavior.
           token.options.conditions =
-                           ns
+                           currentConditions
               .filter(entry =>
                 String(entry.name || "")
                   .toLowerCase() !==
