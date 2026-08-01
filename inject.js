@@ -8562,12 +8562,12 @@ const AVTT_AOE_STYLES = [
                 }
               ];
 
-        token.options.conditions =
-          nextConditions.map(entry => ({
-            ...entry
-          }));
-
         if (ddbConditions.has(conditionKey)) {
+          token.options.conditions =
+            nextConditions.map(entry => ({
+              ...entry
+            }));
+
           const pcConditions =
             nextConditions.filter(entry =>
               ddbConditions.has(
@@ -8611,6 +8611,19 @@ const AVTT_AOE_STYLES = [
             }
           );
         } else {
+          // Non-D&D effects belong only in custom_conditions.
+          // Remove any native duplicate left by older behavior.
+          token.options.conditions =
+                           ns
+              .filter(entry =>
+                String(entry.name || "")
+                  .toLowerCase() !==
+                conditionKey
+              )
+              .map(entry => ({
+                ...entry
+              }));
+
           const currentCustomConditions = [
             ...(token.options.custom_conditions || [])
           ];
