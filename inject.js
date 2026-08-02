@@ -1610,19 +1610,56 @@ setInterval(async () => {
   }
 }, 2000);
 
-setInterval(async () => {
+const AVTT_COMBAT_STATE_INTERVAL_KEY =
+  "__avttCombatStateInterval";
+
+async function sendCombatStateToBridge() {
   try {
     const combatState =
       await getCombatState();
 
-    window.postMessage({
-      type: "AVTT_COMBAT_STATE",
-      combatState
-    }, "*");
-  } catch (err) {
-    console.warn("Combat state error:", err);
+    window.postMessage(
+      {
+        type: "AVTT_COMBAT_STATE",
+        combatState
+      },
+      "*"
+    );
+  } catch (error) {
+    console.warn(
+      "Combat state error:",
+      error
+    );
   }
-}, 1000);
+}
+
+function startCombatStateSender() {
+  const existingInterval =
+    window[
+      AVTT_COMBAT_STATE_INTERVAL_KEY
+    ];
+
+  if (existingInterval) {
+    window.clearInterval(
+      existingInterval
+    );
+  }
+
+  sendCombatStateToBridge();
+
+  window[
+    AVTT_COMBAT_STATE_INTERVAL_KEY
+  ] = window.setInterval(
+    sendCombatStateToBridge,
+    1000
+  );
+
+  console.log(
+    "AVTT combat-state sender started."
+  );
+}
+
+startCombatStateSender();
 
 
 
