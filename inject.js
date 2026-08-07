@@ -5875,6 +5875,30 @@ function avttEnsurePromptStyles() {
       background: #2f81f7;
       color: #ffffff;
     }
+
+    .avtt-roll-mode-buttons {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .avtt-prompt-button-advantage {
+      background: #238636;
+      border-color: #2ea043;
+      color: #ffffff;
+    }
+
+    .avtt-prompt-button-disadvantage {
+      background: #da3633;
+      border-color: #f85149;
+      color: #ffffff;
+    }
+
+    .avtt-roll-mode-cancel {
+      width: 100%;
+      margin-top: 10px;
+    }
   `;
 
   (
@@ -5882,6 +5906,192 @@ function avttEnsurePromptStyles() {
     document.documentElement
   ).appendChild(style);
 }
+
+async function avttShowRollModePrompt(
+  options = {}
+) {
+  console.log(
+    "avttShowRollModePrompt()",
+    options
+  );
+
+  avttEnsurePromptStyles();
+
+  const existingOverlay =
+    document.getElementById(
+      "avtt-prompt-overlay"
+    );
+
+  existingOverlay?.remove();
+
+  const overlay =
+    document.createElement("div");
+
+  overlay.id =
+    "avtt-prompt-overlay";
+
+  const modal =
+    document.createElement("div");
+
+  modal.className =
+    "avtt-prompt-modal";
+
+  const title =
+    document.createElement("div");
+
+  title.className =
+    "avtt-prompt-title";
+
+  title.textContent =
+    String(
+      options.title ||
+      "Choose Roll Mode"
+    );
+
+  modal.appendChild(title);
+
+  if (options.label) {
+    const label =
+      document.createElement("div");
+
+    label.className =
+      "avtt-prompt-label";
+
+    label.textContent =
+      String(options.label);
+
+    modal.appendChild(label);
+  }
+
+  const choiceRow =
+    document.createElement("div");
+
+  choiceRow.className =
+    "avtt-roll-mode-buttons";
+
+  const advantageButton =
+    document.createElement("button");
+
+  advantageButton.type =
+    "button";
+
+  advantageButton.className =
+    "avtt-prompt-button " +
+    "avtt-prompt-button-advantage";
+
+  advantageButton.textContent =
+    "Roll with Advantage";
+
+  const disadvantageButton =
+    document.createElement("button");
+
+  disadvantageButton.type =
+    "button";
+
+  disadvantageButton.className =
+    "avtt-prompt-button " +
+    "avtt-prompt-button-disadvantage";
+
+  disadvantageButton.textContent =
+    "Roll with Disadvantage";
+
+  choiceRow.append(
+    advantageButton,
+    disadvantageButton
+  );
+
+  modal.appendChild(choiceRow);
+
+  const cancelButton =
+    document.createElement("button");
+
+  cancelButton.type =
+    "button";
+
+  cancelButton.className =
+    "avtt-prompt-button " +
+    "avtt-prompt-button-cancel " +
+    "avtt-roll-mode-cancel";
+
+  cancelButton.textContent =
+    "Cancel";
+
+  modal.appendChild(cancelButton);
+
+  overlay.appendChild(modal);
+
+  document.body.appendChild(
+    overlay
+  );
+
+  requestAnimationFrame(() => {
+    advantageButton.focus();
+  });
+
+  return new Promise(resolve => {
+    let finished = false;
+
+    const finish = value => {
+      if (finished) {
+        return;
+      }
+
+      finished = true;
+
+      document.removeEventListener(
+        "keydown",
+        handleKeydown
+      );
+
+      overlay.remove();
+
+      resolve(value);
+    };
+
+    const handleKeydown = event => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        finish(null);
+      }
+    };
+
+    advantageButton.addEventListener(
+      "click",
+      () => {
+        finish("advantage");
+      }
+    );
+
+    disadvantageButton.addEventListener(
+      "click",
+      () => {
+        finish("disadvantage");
+      }
+    );
+
+    cancelButton.addEventListener(
+      "click",
+      () => {
+        finish(null);
+      }
+    );
+
+    overlay.addEventListener(
+      "click",
+      event => {
+        if (event.target === overlay) {
+          finish(null);
+        }
+      }
+    );
+
+    document.addEventListener(
+      "keydown",
+      handleKeydown
+    );
+  });
+}
+
 
 async function avttShowPrompt(options = {}) {
   console.log("avttShowPrompt()", options);
@@ -9035,8 +9245,63 @@ const AVTT_AOE_STYLES = [
             bonus
           );
 
+        const requestedRollMode =
+          [
+            "advantage",
+            "disadvantage",
+            "prompt"
+          ].includes(
+            String(
+              cmd.rollMode ||
+              "normal"
+            )
+          )
+            ? String(
+                cmd.rollMode
+              )
+            : "normal";
+
+        let resolvedRollMode =
+          requestedRollMode;
+
+        if (
+          requestedRollMode ===
+          "prompt"
+        ) {
+          resolvedRollMode =
+            await avttShowRollModePrompt({
+              title:
+                "Choose Roll Mode",
+
+              label:
+                String(
+                  cmd.action ||
+                  "Stream Deck"
+                ).trim()
+            });
+
+          if (
+            resolvedRollMode === null
+          ) {
+            console.log(
+              "rollWithPrompt: roll mode selection cancelled"
+            );
+
+            return;
+          }
+        }
+
+        const diceExpression =
+          resolvedRollMode ===
+          "advantage"
+            ? `2${diceType}kh1`
+            : resolvedRollMode ===
+                "disadvantage"
+              ? `2${diceType}kl1`
+              : `${numberOfDice}${diceType}`;
+
         const expression =
-          `${numberOfDice}${diceType}` +
+          diceExpression +
           (
             normalizedBonus > 0
               ? `+${normalizedBonus}`
