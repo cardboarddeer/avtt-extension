@@ -5878,9 +5878,15 @@ function avttEnsurePromptStyles() {
 
     .avtt-roll-mode-buttons {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: 1fr 1fr 1fr;
       gap: 10px;
       margin-top: 18px;
+    }
+
+    .avtt-prompt-button-normal {
+      background: #2f81f7;
+      border-color: #388bfd;
+      color: #ffffff;
     }
 
     .avtt-prompt-button-advantage {
@@ -5969,6 +5975,19 @@ async function avttShowRollModePrompt(
   choiceRow.className =
     "avtt-roll-mode-buttons";
 
+  const normalButton =
+    document.createElement("button");
+
+  normalButton.type =
+    "button";
+
+  normalButton.className =
+    "avtt-prompt-button " +
+    "avtt-prompt-button-normal";
+
+  normalButton.textContent =
+    "Roll Normal";
+
   const advantageButton =
     document.createElement("button");
 
@@ -5980,7 +5999,7 @@ async function avttShowRollModePrompt(
     "avtt-prompt-button-advantage";
 
   advantageButton.textContent =
-    "Roll with Advantage";
+    "Roll with ADV";
 
   const disadvantageButton =
     document.createElement("button");
@@ -5993,9 +6012,10 @@ async function avttShowRollModePrompt(
     "avtt-prompt-button-disadvantage";
 
   disadvantageButton.textContent =
-    "Roll with Disadvantage";
+    "Roll with DIS";
 
   choiceRow.append(
+    normalButton,
     advantageButton,
     disadvantageButton
   );
@@ -6025,7 +6045,7 @@ async function avttShowRollModePrompt(
   );
 
   requestAnimationFrame(() => {
-    advantageButton.focus();
+    normalButton.focus();
   });
 
   return new Promise(resolve => {
@@ -6054,6 +6074,13 @@ async function avttShowRollModePrompt(
         finish(null);
       }
     };
+
+    normalButton.addEventListener(
+      "click",
+      () => {
+        finish("normal");
+      }
+    );
 
     advantageButton.addEventListener(
       "click",
