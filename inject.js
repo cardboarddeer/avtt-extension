@@ -7833,6 +7833,26 @@ const AVTT_AOE_STYLES = [
     return;
   }
 
+  if (cmd.command === "openJournalNote") {
+    const noteId = String(cmd.noteId || "").trim();
+
+    if (!noteId) {
+      console.warn("openJournalNote: missing noteId");
+      return;
+    }
+
+    if (typeof window.JOURNAL?.display_note !== "function") {
+      console.warn(
+        "openJournalNote: JOURNAL.display_note is not available"
+      );
+      return;
+    }
+
+    console.log("openJournalNote: opening note", noteId);
+    window.JOURNAL.display_note(noteId);
+    return;
+  }
+
   if (cmd.command === "openSettingsTab") {
     $("#switch_settings").trigger("click");
     return;
