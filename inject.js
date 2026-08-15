@@ -185,6 +185,41 @@ function tokenToState(
       : 0;
   }
 
+  function getSheetExhaustionLevel(
+    pcData
+  ) {
+    const conditions =
+      Array.isArray(
+        pcData?.conditions
+      )
+        ? pcData.conditions
+        : [];
+
+    const exhaustionEntry =
+      conditions.find(entry => {
+        const name =
+          typeof entry === "string"
+            ? entry
+            : entry?.name;
+
+        return (
+          String(name || "")
+            .trim()
+            .toLowerCase() ===
+          "exhaustion"
+        );
+      });
+
+    const level =
+      Number(
+        exhaustionEntry?.level
+      );
+
+    return Number.isFinite(level)
+      ? level
+      : 0;
+  }
+
   const baseAbilities = {
     STR:
       findAbility(
@@ -449,6 +484,11 @@ function tokenToState(
       token.options
         ?.custom_conditions ||
       [],
+
+    exhaustionLevel:
+      getSheetExhaustionLevel(
+        pcData
+      ),
 
     deathSaveInfo: {
       successCount:
