@@ -22,12 +22,29 @@ setInterval(() => {
 
     console.log("Received command:", command);
 
+    if (command.command === "showImagePopup") {
+      chrome.runtime.sendMessage(
+        { type: "GET_INFO_POPUP_IMAGE", image: command.image },
+        (imageResult) => {
+          window.postMessage({
+            type: "AVTT_BRIDGE_COMMAND",
+            command: {
+              ...command,
+              imageDataUrl: imageResult?.dataUrl || null,
+              imageError: imageResult?.error || null
+            }
+          }, "*");
+        }
+      );
+      return;
+    }
+
     window.postMessage({
       type: "AVTT_BRIDGE_COMMAND",
       command
     }, "*");
   });
-}, 1000);
+}, 250);
 
 
 window.addEventListener("message", (event) => {

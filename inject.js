@@ -1380,7 +1380,11 @@ function getInitiativeTrackerState() {
 
 async function getCombatState() {
   const selectedTokenId =
-    CURRENTLY_SELECTED_TOKENS?.[0];
+    typeof CURRENTLY_SELECTED_TOKENS !==
+      "undefined" &&
+    Array.isArray(CURRENTLY_SELECTED_TOKENS)
+      ? CURRENTLY_SELECTED_TOKENS[0]
+      : undefined;
 
   const selectedToken =
     TOKEN_OBJECTS?.[selectedTokenId];
@@ -2375,6 +2379,228 @@ function avttScanExistingRollEntries() {
         true
       );
     });
+}
+
+const AVTT_INFO_POPUP_STYLE_ID = "avtt-info-popup-style";
+const AVTT_INFO_POPUP_OVERLAY_ID = "avtt-info-popup-overlay";
+
+function avttEnsureInfoPopupStyles() {
+  if (document.getElementById(AVTT_INFO_POPUP_STYLE_ID)) return;
+
+  const style = document.createElement("style");
+  style.id = AVTT_INFO_POPUP_STYLE_ID;
+
+  style.textContent = `
+    #${AVTT_INFO_POPUP_OVERLAY_ID} {
+      position: fixed;
+      inset: 0;
+      z-index: 999998;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.72);
+      animation: avtt-info-popup-fade-in 120ms ease-out;
+    }
+
+    .avtt-info-popup-card {
+      box-sizing: border-box;
+      max-width: min(96vw, 1800px);
+      max-height: 96vh;
+      display: flex;
+      flex-direction: column;
+      background:
+        linear-gradient(
+          135deg,
+          rgba(28, 31, 38, 0.97),
+          rgba(12, 14, 18, 0.97)
+        );
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 10px;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+      color: #ffffff;
+      font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
+      overflow: hidden;
+    }
+
+    .avtt-info-popup-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .avtt-info-popup-title {
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    .avtt-info-popup-close {
+      cursor: pointer;
+      background: none;
+      border: none;
+      color: #ffffff;
+      font-size: 20px;
+      line-height: 1;
+      padding: 2px 6px;
+      opacity: 0.75;
+    }
+
+    .avtt-info-popup-close:hover {
+      opacity: 1;
+    }
+
+    .avtt-info-popup-body {
+      overflow: auto;
+      padding: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .avtt-info-popup-body img {
+      max-width: 100%;
+      max-height: 88vh;
+      display: block;
+      border-radius: 4px;
+    }
+
+    .avtt-info-popup-error {
+      padding: 20px;
+      opacity: 0.8;
+      font-size: 14px;
+    }
+
+    @keyframes avtt-info-popup-fade-in {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+const AVTT_INFO_POPUP_ZOOM_SCALE = 2.5;
+
+function avttAttachImageZoom(img) {
+  img.style.transition = "transform 180ms ease-out";
+  img.style.cursor = "zoom-in";
+  img.style.willChange = "transform";
+
+  let zoomed = false;
+
+  img.addEventListener("click", (event) => {
+    event.stopPropagation();
+
+    if (zoomed) {
+      img.style.transform = "scale(1)";
+      img.style.cursor = "zoom-in";
+      zoomed = false;
+      return;
+    }
+
+    const rect = img.getBoundingClientRect();
+    const originX = ((event.clientX - rect.left) / rect.width) * 100;
+    const originY = ((event.clientY - rect.top) / rect.height) * 100;
+
+    img.style.transformOrigin = `${originX}% ${originY}%`;
+    img.style.transform = `scale(${AVTT_INFO_POPUP_ZOOM_SCALE})`;
+    img.style.cursor = "zoom-out";
+    zoomed = true;
+  });
+}
+
+let avttInfoPopupOpenImage = null;
+
+function avttCloseInfoPopup() {
+  document
+    .getElementById(AVTT_INFO_POPUP_OVERLAY_ID)
+    ?.remove();
+
+  avttInfoPopupOpenImage = null;
+}
+
+function avttHandleShowImagePopupCommand(cmd) {
+  const isOpen = !!document.getElementById(
+    AVTT_INFO_POPUP_OVERLAY_ID
+  );
+
+  if (isOpen && avttInfoPopupOpenImage === cmd.image) {
+    avttCloseInfoPopup();
+    return;
+  }
+
+  avttShowInfoPopup(cmd);
+}
+
+function avttShowInfoPopup(cmd) {
+  avttEnsureInfoPopupStyles();
+  avttCloseInfoPopup();
+
+  avttInfoPopupOpenImage = cmd.image;
+
+  const overlay = document.createElement("div");
+  overlay.id = AVTT_INFO_POPUP_OVERLAY_ID;
+
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) avttCloseInfoPopup();
+  });
+
+  const card = document.createElement("div");
+  card.className = "avtt-info-popup-card";
+
+  const header = document.createElement("div");
+  header.className = "avtt-info-popup-header";
+
+  const title = document.createElement("div");
+  title.className = "avtt-info-popup-title";
+  title.textContent = cmd.title || "Player Information";
+
+  const closeButton = document.createElement("button");
+  closeButton.className = "avtt-info-popup-close";
+  closeButton.textContent = "×";
+  closeButton.addEventListener("click", avttCloseInfoPopup);
+
+  header.append(title, closeButton);
+
+  const body = document.createElement("div");
+  body.className = "avtt-info-popup-body";
+
+  if (cmd.imageDataUrl) {
+    const img = document.createElement("img");
+    img.src = cmd.imageDataUrl;
+    img.alt = cmd.title || "Player information image";
+
+    if (cmd.zoomEnabled) {
+      avttAttachImageZoom(img);
+    }
+
+    body.appendChild(img);
+  } else {
+    const error = document.createElement("div");
+    error.className = "avtt-info-popup-error";
+
+    error.textContent = cmd.imageError
+      ? `Could not load image: ${cmd.imageError}`
+      : "No image available.";
+
+    body.appendChild(error);
+  }
+
+  card.append(header, body);
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+
+  document.addEventListener("keydown", function avttInfoPopupEscHandler(event) {
+    if (event.key === "Escape") {
+      avttCloseInfoPopup();
+      document.removeEventListener("keydown", avttInfoPopupEscHandler);
+    }
+  });
 }
 
 function avttInitializeRollPopups() {
@@ -7195,6 +7421,10 @@ window.addEventListener("message", async (event) => {
           cmd.value
       }
     );
+  }
+
+  if (cmd.command === "showImagePopup") {
+    avttHandleShowImagePopupCommand(cmd);
   }
 
   if (cmd.command === "spawnTokenFromPath") {
