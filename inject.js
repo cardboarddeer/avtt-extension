@@ -2454,6 +2454,29 @@ function avttEnsureInfoPopupStyles() {
       opacity: 1;
     }
 
+    .avtt-info-popup-header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .avtt-info-popup-send-log {
+      cursor: pointer;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      color: #ffffff;
+      font-size: 12px;
+      line-height: 1;
+      padding: 6px 10px;
+      border-radius: 5px;
+      font-family: inherit;
+      white-space: nowrap;
+    }
+
+    .avtt-info-popup-send-log:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+
     .avtt-info-popup-body {
       overflow: auto;
       padding: 14px;
@@ -2514,6 +2537,59 @@ function avttAttachImageZoom(img) {
   });
 }
 
+function avttSendInfoPopupImageToGameLog(cmd) {
+  if (!cmd.imageDataUrl) {
+    console.error("avttSendInfoPopupImageToGameLog: no imageDataUrl on command", cmd);
+    return false;
+  }
+
+  if (
+    !window.MB ||
+    typeof window.MB.inject_chat !== "function" ||
+    typeof window.MB.encode_message_text !== "function"
+  ) {
+    console.error("avttSendInfoPopupImageToGameLog: window.MB.inject_chat is not available on this page");
+    return false;
+  }
+
+  try {
+    const escapeHtml = (value) => String(value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;");
+
+    const safeTitle = escapeHtml(cmd.title || "");
+
+    const titleHtml = safeTitle
+      ? `<div style="display:block;width:100%;text-align:left !important;font-weight:bold;font-size:16px;margin:0 0 6px 0;padding:0 0 4px 0;border-bottom:1px solid #999;">${safeTitle}</div>`
+      : "";
+
+    const html = `
+      <div style="display:block;width:100%;text-align:left !important;">
+        ${titleHtml}
+        <img src="${cmd.imageDataUrl}" style="max-width:100%;border-radius:4px;display:block;" />
+      </div>
+    `;
+
+    console.log("avttSendInfoPopupImageToGameLog: sending", { title: cmd.title, htmlLength: html.length });
+
+    window.MB.inject_chat({
+      player: window.PLAYER_NAME,
+      img: window.PLAYER_IMG,
+      text: window.MB.encode_message_text(html)
+    });
+
+    if (typeof notify_gamelog === "function") {
+      notify_gamelog([]);
+    }
+
+    return true;
+  } catch (err) {
+    console.error("Failed to send info popup image to game log:", err);
+    return false;
+  }
+}
+
 let avttInfoPopupOpenImage = null;
 
 function avttCloseInfoPopup() {
@@ -2565,7 +2641,31 @@ function avttShowInfoPopup(cmd) {
   closeButton.textContent = "×";
   closeButton.addEventListener("click", avttCloseInfoPopup);
 
-  header.append(title, closeButton);
+  const headerActions = document.createElement("div");
+  headerActions.className = "avtt-info-popup-header-actions";
+
+  if (cmd.imageDataUrl) {
+    const sendLogButton = document.createElement("button");
+    sendLogButton.className = "avtt-info-popup-send-log";
+    sendLogButton.textContent = "Send to Game Log";
+
+    sendLogButton.addEventListener("click", () => {
+      const succeeded = avttSendInfoPopupImageToGameLog(cmd);
+
+      sendLogButton.textContent = succeeded
+        ? "Sent!"
+        : "Failed - see console";
+
+      setTimeout(() => {
+        sendLogButton.textContent = "Send to Game Log";
+      }, 1500);
+    });
+
+    headerActions.appendChild(sendLogButton);
+  }
+
+  headerActions.appendChild(closeButton);
+  header.append(title, headerActions);
 
   const body = document.createElement("div");
   body.className = "avtt-info-popup-body";
