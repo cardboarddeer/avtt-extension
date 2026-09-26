@@ -448,6 +448,113 @@ function tokenToState(
       pcData?.proficiencyBonus ?? 0
     );
 
+  // Resistances/immunities/vulnerabilities all come from the sheet as
+  // arrays of {name, type} (type distinguishes damage vs. condition
+  // entries, e.g. condition immunities like Paralyzed) — only the name
+  // is needed for display.
+  function normalizeNamedTraitList(entries) {
+    return (
+      Array.isArray(entries)
+        ? entries
+        : []
+    )
+      .map(entry =>
+        typeof entry === "string"
+          ? entry.trim()
+          : String(
+              entry?.name || ""
+            ).trim()
+      )
+      .filter(Boolean);
+  }
+
+  // Armor/Weapon/Tool proficiencies and Known Languages are all stored
+  // as the same shape: {group: "Armor"|"Weapons"|"Tools"|"Languages",
+  // values: "comma, separated, string"}.
+  function normalizeProficiencyGroups(
+    entries
+  ) {
+    return (
+      Array.isArray(entries)
+        ? entries
+        : []
+    )
+      .map(entry => ({
+        group:
+          String(
+            entry?.group || ""
+          ).trim(),
+
+        values:
+          String(
+            entry?.values || ""
+          ).trim()
+      }))
+      .filter(entry =>
+        entry.group &&
+        entry.values
+      );
+  }
+
+  // Senses (Darkvision, Blindsight, Truesight, ...) report their
+  // distance pre-formatted as text (e.g. "120 ft."), unlike speeds
+  // below which report a bare number.
+  function normalizeSenseList(
+    entries
+  ) {
+    return (
+      Array.isArray(entries)
+        ? entries
+        : []
+    )
+      .map(entry => ({
+        name:
+          String(
+            entry?.name || ""
+          ).trim(),
+
+        distance:
+          String(
+            entry?.distance ?? ""
+          ).trim()
+      }))
+      // AboveVTT sometimes reports a sense it couldn't name as
+      // "Unknown" (seen as an unexplained "Unknown, 5 ft." entry
+      // with nothing matching it on the character sheet) — drop
+      // those along with entries that have no name at all.
+      .filter(
+        entry =>
+          entry.name &&
+          entry.name.toLowerCase() !==
+            "unknown"
+      );
+  }
+
+  function normalizeSpeedList(
+    entries
+  ) {
+    return (
+      Array.isArray(entries)
+        ? entries
+        : []
+    )
+      .map(entry => ({
+        name:
+          String(
+            entry?.name || ""
+          ).trim(),
+
+        distance:
+          Number(entry?.distance)
+      }))
+      .filter(entry =>
+        entry.name &&
+        Number.isFinite(
+          entry.distance
+        )
+      );
+  }
+
   return {
     id:
       tokenId,
@@ -523,11 +630,102 @@ function tokenToState(
       pcData?.passiveInsight ??
       null,
 
+    passiveInvestigation:
+      pcData?.passiveInvestigation ??
+      null,
+
     darkvision:
       Number(
         token.options?.vision
           ?.feet || 0
       ),
+
+    resistances:
+      normalizeNamedTraitList(
+        pcData?.resistances
+      ),
+
+    immunities:
+      normalizeNamedTraitList(
+        pcData?.immunities
+      ),
+
+    vulnerabilities:
+      normalizeNamedTraitList(
+        pcData?.vulnerabilities
+      ),
+
+    proficiencyGroups:
+      normalizeProficiencyGroups(
+        pcData?.proficiencyGroups
+      ),
+
+    senses:
+      normalizeSenseList(
+        pcData?.senses
+      ),
+
+    speeds:
+      normalizeSpeedList(
+        pcData?.speeds
+      ),
+
+    // Sourced from the slow background refresh above, not this
+    // function's own per-second pass — will read as empty arrays
+    // until the first refresh completes after a page load.
+    feats:
+      window
+        .__avttCharacterDetailsCache?.[
+          pcData?.characterId
+        ]?.feats || [],
+
+    featDetails:
+      window
+        .__avttCharacterDetailsCache?.[
+          pcData?.characterId
+        ]?.featDetails || [],
+
+    attunedItems:
+      window
+        .__avttCharacterDetailsCache?.[
+          pcData?.characterId
+        ]?.attunedItems || [],
+
+    knownSpells:
+      window
+        .__avttCharacterDetailsCache?.[
+          pcData?.characterId
+        ]?.knownSpells || [],
+
+    spellSlots:
+      window
+        .__avttCharacterDetailsCache?.[
+          pcData?.characterId
+        ]?.spellSlots || [],
+
+    pactMagic:
+      window
+        .__avttCharacterDetailsCache?.[
+          pcData?.characterId
+        ]?.pactMagic || [],
+
+    saveModifiers:
+      window
+        .__avttCharacterDetailsCache?.[
+          pcData?.characterId
+        ]?.saveModifiers || [],
+
+    classAndLevel:
+      window
+        .__avttCharacterDetailsCache?.[
+          pcData?.characterId
+        ]?.classAndLevel || "",
+
+    species:
+      window
+        .__avttCharacterDetailsCache?.[
+          pcData?.characterId
+        ]?.species || "",
 
     abilities:
       overriddenAbilities,
@@ -1704,6 +1902,1222 @@ function startCombatStateSender() {
 }
 
 startCombatStateSender();
+
+// Feats, attuned items, and spells/slots aren't part of AboveVTT's
+// already-loaded window.pcs data — getting them means a real network
+// call to D&D Beyond's character API per PC (via avttDdbCharacterRequest,
+// the same authenticated request helper AboveVTT itself uses). Unlike
+// the once-a-second combat-state sync above (which only reads local
+// data), this is real external traffic, so it runs on its own much
+// slower interval and caches results for tokenToState() to read
+// synchronously — see AVTT_CHARACTER_DETAILS_REFRESH_MS below.
+const AVTT_CHARACTER_DETAILS_INTERVAL_KEY =
+  "__avttCharacterDetailsInterval";
+
+const AVTT_CHARACTER_DETAILS_REFRESH_MS = 45000;
+
+window.__avttCharacterDetailsCache =
+  window.__avttCharacterDetailsCache ||
+  {};
+
+// D&D Beyond doesn't store slot maximums: character.spellSlots and
+// character.pactMagic only say how many slots have been `used` per
+// level (`available` is always 0). The maximums have to be worked
+// out from each class's spellRules table instead.
+
+// Standard 5e multiclass spellcaster table: index = combined caster
+// level (1-20), value = max slots for spell levels 1-9.
+const AVTT_MULTICLASS_SPELL_SLOTS = [
+  null,
+  [2, 0, 0, 0, 0, 0, 0, 0, 0],
+  [3, 0, 0, 0, 0, 0, 0, 0, 0],
+  [4, 2, 0, 0, 0, 0, 0, 0, 0],
+  [4, 3, 0, 0, 0, 0, 0, 0, 0],
+  [4, 3, 2, 0, 0, 0, 0, 0, 0],
+  [4, 3, 3, 0, 0, 0, 0, 0, 0],
+  [4, 3, 3, 1, 0, 0, 0, 0, 0],
+  [4, 3, 3, 2, 0, 0, 0, 0, 0],
+  [4, 3, 3, 3, 1, 0, 0, 0, 0],
+  [4, 3, 3, 3, 2, 0, 0, 0, 0],
+  [4, 3, 3, 3, 2, 1, 0, 0, 0],
+  [4, 3, 3, 3, 2, 1, 0, 0, 0],
+  [4, 3, 3, 3, 2, 1, 1, 0, 0],
+  [4, 3, 3, 3, 2, 1, 1, 0, 0],
+  [4, 3, 3, 3, 2, 1, 1, 1, 0],
+  [4, 3, 3, 3, 2, 1, 1, 1, 0],
+  [4, 3, 3, 3, 2, 1, 1, 1, 1],
+  [4, 3, 3, 3, 3, 1, 1, 1, 1],
+  [4, 3, 3, 3, 3, 2, 1, 1, 1],
+  [4, 3, 3, 3, 3, 2, 2, 1, 1]
+];
+
+function classCanCastSpells(
+  characterClass
+) {
+  return Boolean(
+    characterClass?.definition
+      ?.canCastSpells ||
+    characterClass?.subclassDefinition
+      ?.canCastSpells
+  );
+}
+
+// Returns { regular, pact }: arrays of max slots for spell levels
+// 1-9. Warlocks are kept out of the regular pool because Pact Magic
+// is separate from (and doesn't add to) multiclass caster level.
+function computeSpellSlotMaximums(
+  classes
+) {
+  const casters = (
+    Array.isArray(classes)
+      ? classes
+      : []
+  ).filter(classCanCastSpells);
+
+  const isPactClass = characterClass =>
+    characterClass.definition?.name ===
+    "Warlock";
+
+  const spellClasses =
+    casters.filter(
+      characterClass =>
+        !isPactClass(characterClass)
+    );
+
+  const pactClasses =
+    casters.filter(isPactClass);
+
+  const ownTableRow =
+    characterClass =>
+      characterClass.definition
+        ?.spellRules
+        ?.levelSpellSlots?.[
+          characterClass.level
+        ] || [];
+
+  let regular = [];
+
+  if (spellClasses.length === 1) {
+    // Single caster class: its own table already has the answer.
+    regular =
+      ownTableRow(spellClasses[0]);
+  } else if (spellClasses.length > 1) {
+    const casterLevel =
+      spellClasses.reduce(
+        (total, characterClass) => {
+          const rules =
+            characterClass.definition
+              ?.spellRules || {};
+
+          const divisor =
+            Number(
+              rules
+                .multiClassSpellSlotDivisor
+            ) || 0;
+
+          if (divisor <= 0) {
+            return total;
+          }
+
+          const share =
+            Number(
+              characterClass.level
+            ) / divisor;
+
+          // Rounding 2 = round up (Paladin, Ranger, Artificer);
+          // 1 = round down.
+          return (
+            total +
+            (rules
+              .multiClassSpellSlotRounding ===
+            2
+              ? Math.ceil(share)
+              : Math.floor(share))
+          );
+        },
+        0
+      );
+
+    regular =
+      AVTT_MULTICLASS_SPELL_SLOTS[
+        Math.min(casterLevel, 20)
+      ] || [];
+  }
+
+  const pact =
+    pactClasses.length
+      ? ownTableRow(pactClasses[0])
+      : [];
+
+  return {
+    regular,
+    pact
+  };
+}
+
+// Combines max slots (from computeSpellSlotMaximums) with D&D
+// Beyond's per-level `used` counts into { level, used, available }
+// entries, so `used + available` is the real maximum.
+function buildSpellSlotList(
+  maximums,
+  usedEntries
+) {
+  const usedByLevel = new Map(
+    (Array.isArray(usedEntries)
+      ? usedEntries
+      : []
+    ).map(entry => [
+      Number(entry?.level),
+      Number(entry?.used) || 0
+    ])
+  );
+
+  return maximums
+    .map((max, index) => {
+      const level = index + 1;
+
+      const total =
+        Number(max) || 0;
+
+      const used = Math.min(
+        usedByLevel.get(level) || 0,
+        total
+      );
+
+      return {
+        level,
+        used,
+        available: total - used
+      };
+    })
+    .filter(entry =>
+      entry.used + entry.available >
+        0
+    );
+}
+
+const AVTT_SAVE_ABILITY_ABBREVIATIONS = {
+  strength: "STR",
+  dexterity: "DEX",
+  constitution: "CON",
+  intelligence: "INT",
+  wisdom: "WIS",
+  charisma: "CHA"
+};
+
+// Ability-score ids D&D Beyond uses in a modifier's `statId`.
+const AVTT_STAT_ABBREVIATIONS_BY_ID = {
+  1: "STR",
+  2: "DEX",
+  3: "CON",
+  4: "INT",
+  5: "WIS",
+  6: "CHA"
+};
+
+// Advantage/disadvantage and bonuses on saving throws, as short
+// display lines like "Advantage on CON saving throws that you make
+// to maintain Concentration" or "+1 to all saving throws". Reads
+// character.modifiers, which D&D Beyond groups by source (race,
+// class, feat, item, ...). Proficiencies are deliberately left out.
+// Some "+X mod" bonuses (e.g. a Paladin's Aura of Protection) are
+// scoped to a radius that's tied to the granting class feature's
+// own level-scaling data, not to the modifier itself (its
+// `restriction` is empty). D&D Beyond already resolves that scaling
+// for the character's current level (e.g. Aura of Protection is 10
+// ft. normally, but a level-18+ Paladin's aura is already reported
+// as 30 ft. here) — read the resolved value rather than hardcode it.
+function findComponentLevelScaleFeet(
+  character,
+  componentId
+) {
+  for (const characterClass of
+    character.classes || []
+  ) {
+    const feature = (
+      characterClass.classFeatures ||
+      []
+    ).find(
+      entry =>
+        entry?.definition?.id ===
+          componentId ||
+        entry?.componentId ===
+          componentId
+    );
+
+    const feet = Number(
+      feature?.levelScale?.fixedValue
+    );
+
+    if (
+      Number.isFinite(feet) &&
+      feet > 0
+    ) {
+      return feet;
+    }
+  }
+
+  return null;
+}
+
+// overriddenAbilities (STR/DEX/CON/INT/WIS/CHA -> {score, modifier})
+// is the SAME already-computed ability data used for the ability
+// tables/grapple DC elsewhere on the card — reused here rather than
+// re-deriving a modifier from raw stats, which would mean
+// reimplementing D&D Beyond's own ability-score rules (racial
+// bonuses, ASIs, item bonuses, overrides) a second time.
+function buildSaveModifierList(
+  character,
+  overriddenAbilities
+) {
+  const inventoryByDefinitionId =
+    new Map(
+      (character.inventory || []).map(
+        item => [
+          item?.definition?.id,
+          item
+        ]
+      )
+    );
+
+  const lowerFirst = text =>
+    text.charAt(0).toLowerCase() +
+    text.slice(1);
+
+  // One entry per (type, restriction, general-or-per-ability), so
+  // abilities sharing a restriction collapse into one line.
+  const grouped = new Map();
+
+  Object.entries(
+    character.modifiers || {}
+  ).forEach(([source, modifiers]) => {
+    if (
+      source === "condition" ||
+      !Array.isArray(modifiers)
+    ) {
+      return;
+    }
+
+    modifiers.forEach(modifier => {
+      const isBonus =
+        modifier?.type === "bonus";
+
+      if (
+        modifier?.type !==
+          "advantage" &&
+        modifier?.type !==
+          "disadvantage" &&
+        !isBonus
+      ) {
+        return;
+      }
+
+      if (modifier.isGranted === false) {
+        return;
+      }
+
+      const match = String(
+        modifier.subType || ""
+      ).match(
+        /^(?:(\w+)-)?saving-throws$/
+      );
+
+      if (!match) {
+        return;
+      }
+
+      // A bonus is either a flat number ("+1") or "your <ability>
+      // modifier" (e.g. Aura of Protection, via statId). Skip any
+      // bonus that has neither, since there'd be nothing to show.
+      // Flat bonuses that share a scope are summed (two +1 sources
+      // stack to +2); "+X (CHA mod)" style ones show the character's
+      // actual current modifier, not just the ability's name.
+      let amount = "";
+      let flatValue = 0;
+      let radiusFeet = null;
+
+      if (isBonus) {
+        const flat = Number(
+          modifier.value ??
+          modifier.fixedValue
+        );
+
+        const statAbbreviation =
+          AVTT_STAT_ABBREVIATIONS_BY_ID[
+            modifier.statId
+          ];
+
+        if (flat) {
+          flatValue = flat;
+        } else if (statAbbreviation) {
+          const actualModifier =
+            overriddenAbilities?.[
+              statAbbreviation
+            ]?.modifier;
+
+          amount =
+            Number.isFinite(
+              actualModifier
+            )
+              ? `${
+                  actualModifier >= 0
+                    ? "+"
+                    : ""
+                }${actualModifier} (${statAbbreviation} mod)`
+              : `+${statAbbreviation} mod`;
+
+          radiusFeet =
+            findComponentLevelScaleFeet(
+              character,
+              modifier.componentId
+            );
+        } else {
+          return;
+        }
+      }
+
+      // Item modifiers are listed even when the item isn't in use,
+      // so only count items that are equipped (and attuned, if the
+      // item needs attunement).
+      if (source === "item") {
+        const item =
+          inventoryByDefinitionId.get(
+            modifier.componentId
+          );
+
+        if (
+          !item?.equipped ||
+          (item.definition?.canAttune &&
+            !item.isAttuned)
+        ) {
+          return;
+        }
+      }
+
+      const restriction =
+        String(
+          modifier.restriction || ""
+        )
+          .trim()
+          .replace(/\.$/, "");
+
+      const abilityKey = match[1];
+
+      // Flat numeric bonuses (e.g. "+1") key by the SPECIFIC
+      // ability when there is one, so a magic item that grants "+1
+      // to each of the six saves" — six separate per-ability
+      // modifiers in D&D Beyond's data, not one general modifier —
+      // doesn't get its six +1's summed into a meaningless +6. Only
+      // genuine same-ability stacking (two sources both boosting,
+      // say, STR) should add together. Advantage/disadvantage (and
+      // "+X mod" style bonuses, which have no numeric total to
+      // protect) keep the old behavior: abilities sharing a
+      // restriction group into one entry regardless of which
+      // ability, since there's nothing to accidentally sum.
+      const groupKey =
+        `${modifier.type}|` +
+        `${flatValue ? "flat" : amount}|` +
+        `${restriction}|` +
+        (
+          flatValue
+            ? abilityKey ||
+              "__general__"
+            : abilityKey
+              ? "ability"
+              : "general"
+        );
+
+      if (!grouped.has(groupKey)) {
+        grouped.set(groupKey, {
+          type: modifier.type,
+          amount,
+          flatTotal: 0,
+          restriction,
+          radiusFeet,
+          abilities: []
+        });
+      }
+
+      grouped.get(groupKey).flatTotal +=
+        flatValue;
+
+      if (abilityKey) {
+        const label =
+          AVTT_SAVE_ABILITY_ABBREVIATIONS[
+            abilityKey
+          ] ||
+          abilityKey
+            .charAt(0)
+            .toUpperCase() +
+            abilityKey.slice(1);
+
+        const entry =
+          grouped.get(groupKey);
+
+        if (
+          !entry.abilities.includes(
+            label
+          )
+        ) {
+          entry.abilities.push(label);
+        }
+      }
+    });
+  });
+
+  // Different abilities' flat-bonus entries were kept separate above
+  // specifically so they couldn't be summed together. Now merge the
+  // ones that genuinely share the same restriction and per-ability
+  // amount into one display line (e.g. six separate "+1 to <ability>"
+  // entries, one per ability, become a single "+1 to all saving
+  // throws" line) — combining their ability names only, never their
+  // numbers.
+  const displayEntries = new Map();
+
+  grouped.forEach(entry => {
+    const isMergeableFlatBonus =
+      entry.type === "bonus" &&
+      entry.flatTotal !== 0;
+
+    const mergeKey = isMergeableFlatBonus
+      ? `${entry.type}|${entry.restriction}|${entry.flatTotal}`
+      : `${entry.type}|${entry.restriction}|${entry.amount}|${entry.abilities.join(",")}`;
+
+    if (!displayEntries.has(mergeKey)) {
+      displayEntries.set(mergeKey, {
+        ...entry,
+        abilities: [...entry.abilities]
+      });
+
+      return;
+    }
+
+    const existing =
+      displayEntries.get(mergeKey);
+
+    entry.abilities.forEach(label => {
+      if (
+        !existing.abilities.includes(
+          label
+        )
+      ) {
+        existing.abilities.push(label);
+      }
+    });
+  });
+
+  return [
+    ...new Set(
+      [...displayEntries.values()].map(
+        ({
+          type,
+          amount: statAmount,
+          flatTotal,
+          restriction,
+          radiusFeet,
+          abilities
+        }) => {
+          if (type === "bonus") {
+            const amount =
+              flatTotal
+                ? flatTotal > 0
+                  ? `+${flatTotal}`
+                  : String(flatTotal)
+                : statAmount;
+
+            // Flat bonuses that cancel out (+1 and -1) leave
+            // nothing to show.
+            if (!amount) {
+              return "";
+            }
+
+            // All six abilities sharing the same amount (see the
+            // merge step above) means "all saving throws", same as
+            // a genuinely general bonus — not a list of six names.
+            const coversAllAbilities =
+              abilities.length >=
+              Object.keys(
+                AVTT_SAVE_ABILITY_ABBREVIATIONS
+              ).length;
+
+            const target =
+              abilities.length &&
+              !coversAllAbilities
+                ? abilities.join(", ")
+                : "all";
+
+            // A restriction that already starts with "saving
+            // throws ..." supplies the noun itself.
+            const line =
+              /^saving throws/i.test(
+                restriction
+              )
+                ? abilities.length
+                  ? `${amount} to ${target} ${restriction}`
+                  : `${amount} to ${restriction}`
+                : restriction
+                  ? `${amount} to ${target} saving throws ` +
+                    lowerFirst(restriction)
+                  : `${amount} to ${target} saving throws`;
+
+            // Aura-of-Protection-style bonuses: the granting class
+            // feature's own (already level-scaled) radius, appended
+            // as a trailing note.
+            return radiusFeet
+              ? `${line} (${radiusFeet} ft. radius)`
+              : line;
+          }
+
+          const verb =
+            type === "advantage"
+              ? "Advantage"
+              : "Disadvantage";
+
+          if (abilities.length) {
+            const scope =
+              `${verb} on ` +
+              abilities.join(", ");
+
+            // Some restrictions already start with "saving
+            // throws that you make ...", so don't repeat it.
+            return /^saving throws/i.test(
+              restriction
+            )
+              ? `${scope} ${restriction}`
+              : restriction
+                ? `${scope} saving throws ` +
+                  lowerFirst(restriction)
+                : `${scope} saving throws`;
+          }
+
+          return restriction
+            ? `${verb} ${lowerFirst(restriction)}`
+            : `${verb} on all saving throws`;
+        }
+      )
+    )
+  ].filter(Boolean);
+}
+
+// D&D Beyond's activationType is a bare integer with no label of its
+// own (unlike duration/range below, which already come as strings).
+// This is the standard mapping used throughout the D&D Beyond API
+// (the same one community sheet-importer tools rely on) rather than
+// something specific to this extension.
+const AVTT_SPELL_ACTIVATION_LABELS = {
+  1: "Action",
+  2: "No Action",
+  3: "Reaction",
+  4: "Bonus Action",
+  5: "Minute",
+  6: "Hour",
+  7: "Special",
+  8: "Round"
+};
+
+// "1 Action", "1 Bonus Action", "10 Minutes" — every label except
+// "No Action" and "Special" is shown with its count from
+// activationTime, matching D&D Beyond's own spell block wording.
+function formatSpellCastingTime(
+  activation
+) {
+  const label =
+    AVTT_SPELL_ACTIVATION_LABELS[
+      Number(activation?.activationType)
+    ];
+
+  if (!label) {
+    return "";
+  }
+
+  const time = Number(
+    activation?.activationTime
+  );
+
+  const takesCount = ![
+    "No Action",
+    "Special"
+  ].includes(label);
+
+  return takesCount &&
+    Number.isFinite(time) &&
+    time > 0
+    ? `${time} ${label}${
+        time === 1 ? "" : "s"
+      }`
+    : label;
+}
+
+// "Touch", "Self", "150 ft.", "Self (30-foot cone)" — range.origin
+// is already a string from D&D Beyond ("Touch", "Self", "Ranged",
+// "Sight", ...); only "Ranged" carries a separate numeric distance.
+function formatSpellRange(range) {
+  const origin = String(
+    range?.origin || ""
+  ).trim();
+
+  const value = Number(
+    range?.rangeValue
+  );
+
+  const hasValue =
+    Number.isFinite(value) && value > 0;
+
+  let base;
+
+  if (!origin) {
+    base = "";
+  } else if (
+    origin === "Ranged" &&
+    hasValue
+  ) {
+    base = `${value} ft.`;
+  } else if (
+    (origin === "Self" ||
+      origin === "Touch") &&
+    !hasValue
+  ) {
+    base = origin;
+  } else {
+    base = hasValue
+      ? `${origin} (${value} ft.)`
+      : origin;
+  }
+
+  const aoeType = String(
+    range?.aoeType || ""
+  ).trim();
+
+  const aoeValue = Number(
+    range?.aoeValue
+  );
+
+  if (
+    aoeType &&
+    Number.isFinite(aoeValue) &&
+    aoeValue > 0
+  ) {
+    const aoeText = `${aoeValue}-foot ${aoeType.toLowerCase()}`;
+
+    return base
+      ? `${base} (${aoeText})`
+      : aoeText;
+  }
+
+  return base;
+}
+
+// "Concentration, up to 10 Minutes", "Instantaneous" — durationType
+// and durationUnit are already strings from D&D Beyond.
+function formatSpellDuration(
+  duration
+) {
+  const type = String(
+    duration?.durationType || ""
+  ).trim();
+
+  const unit = String(
+    duration?.durationUnit || ""
+  ).trim();
+
+  const interval = Number(
+    duration?.durationInterval
+  );
+
+  const hasInterval =
+    Number.isFinite(interval) &&
+    interval > 0 &&
+    unit;
+
+  const intervalText = hasInterval
+    ? `${interval} ${unit}${
+        interval === 1 ? "" : "s"
+      }`
+    : "";
+
+  if (type === "Concentration") {
+    return intervalText
+      ? `Concentration, up to ${intervalText}`
+      : "Concentration";
+  }
+
+  if (!type || type === "Instantaneous") {
+    return type || intervalText;
+  }
+
+  return intervalText || type;
+}
+
+const AVTT_SPELL_COMPONENT_LETTERS = {
+  1: "V",
+  2: "S",
+  3: "M"
+};
+
+// "V, S, M (a sprig of mistletoe)" — components is D&D Beyond's
+// array of component codes (1=Verbal, 2=Somatic, 3=Material);
+// componentsDescription is the material's own text, when there is
+// one.
+function formatSpellComponents(
+  components,
+  componentsDescription
+) {
+  const letters = (
+    Array.isArray(components)
+      ? components
+      : []
+  )
+    .map(
+      code =>
+        AVTT_SPELL_COMPONENT_LETTERS[
+          Number(code)
+        ]
+    )
+    .filter(Boolean);
+
+  const letterText =
+    letters.join(", ");
+
+  const material = String(
+    componentsDescription || ""
+  ).trim();
+
+  return material
+    ? `${letterText} (${material})`
+    : letterText;
+}
+
+// Spells live in more than one place in D&D Beyond's response: the
+// ones a class knows are in character.classSpells, but species
+// spells, feat spells (e.g. Magic Initiate) and background spells
+// are under character.spells.{race,feat,background} (and
+// character.spells.class). The same spell can show up more than
+// once (e.g. Blade Ward twice under race), so entries are merged by
+// name + level. Spells granted by items (spells.item) are not
+// included yet — they'd need an equipped/attuned check first.
+function collectKnownSpells(
+  character
+) {
+  const asList = value =>
+    Array.isArray(value)
+      ? value
+      : [];
+
+  // classSpells groups this character's own classes only (matched
+  // via characterClassId), not the game's full canonical list of
+  // every class that can ever learn a given spell — a multiclass
+  // Paladin/Warlock who knows Hex through both would show it granted
+  // by both, but this can never say "also learnable by Sorcerer" if
+  // neither of the character's own classes is one.
+  const classNameById = new Map(
+    asList(character.classes).map(
+      characterClass => [
+        characterClass?.id,
+        String(
+          characterClass?.definition
+            ?.name || ""
+        ).trim()
+      ]
+    )
+  );
+
+  const rawSpells = [
+    ...asList(
+      character.classSpells
+    ).flatMap(group => {
+      const className =
+        classNameById.get(
+          group?.characterClassId
+        ) || "";
+
+      return asList(
+        group?.spells
+      ).map(spell => ({
+        spell,
+        className
+      }));
+    }),
+
+    ...asList(character.spells?.class),
+    ...asList(character.spells?.race),
+    ...asList(character.spells?.feat),
+    ...asList(
+      character.spells?.background
+    )
+  ].map(entry =>
+    // The four extra buckets above are bare spell objects, not yet
+    // wrapped like the classSpells ones — normalize them here so
+    // every entry has the same { spell, className } shape. Their
+    // granting class isn't known (they're not tied to a
+    // characterClassId the way classSpells groups are).
+    entry?.spell ? entry : {
+      spell: entry,
+      className: ""
+    }
+  );
+
+  const merged = new Map();
+
+  rawSpells.forEach(({
+    spell,
+    className
+  }) => {
+    const name = String(
+      spell?.definition?.name || ""
+    ).trim();
+
+    if (!name) {
+      return;
+    }
+
+    const level = Number(
+      spell?.definition?.level ?? 0
+    );
+
+    const key =
+      `${name.toLowerCase()}|${level}`;
+
+    const existing =
+      merged.get(key);
+
+    const concentration = Boolean(
+      spell?.definition?.concentration
+    );
+
+    const ritual = Boolean(
+      spell?.definition?.ritual
+    );
+
+    if (existing) {
+      existing.prepared =
+        existing.prepared ||
+        Boolean(spell?.prepared);
+
+      existing.concentration =
+        existing.concentration ||
+        concentration;
+
+      existing.ritual =
+        existing.ritual || ritual;
+
+      if (className) {
+        existing.classes.add(
+          className
+        );
+      }
+
+      return;
+    }
+
+    const definition =
+      spell?.definition || {};
+
+    const saveAbility =
+      AVTT_STAT_ABBREVIATIONS_BY_ID[
+        Number(
+          definition.saveDcAbilityId
+        )
+      ];
+
+    merged.set(key, {
+      name,
+      level,
+      prepared:
+        Boolean(spell?.prepared),
+      concentration,
+      ritual,
+
+      school: String(
+        definition.school || ""
+      ).trim(),
+
+      castingTime:
+        formatSpellCastingTime(
+          definition.activation
+        ),
+
+      range: formatSpellRange(
+        definition.range
+      ),
+
+      duration: formatSpellDuration(
+        definition.duration
+      ),
+
+      components:
+        formatSpellComponents(
+          definition.components,
+          definition
+            .componentsDescription
+        ),
+
+      requiresSavingThrow: Boolean(
+        definition.requiresSavingThrow
+      ),
+
+      saveAbility:
+        saveAbility || "",
+
+      requiresAttackRoll: Boolean(
+        definition.requiresAttackRoll
+      ),
+
+      // Raw HTML, same as D&D Beyond's own spell description — the
+      // popup renders it as-is rather than stripping it to plain
+      // text, since it's already meant to be read as formatted rules
+      // text (paragraphs, bold terms, etc.).
+      description: String(
+        definition.description || ""
+      ),
+
+      // Which of THIS character's own classes granted the spell —
+      // not the game's full canonical list of every class that can
+      // learn it (see the comment above rawSpells). A Set while
+      // merging, since a multiclass character can gain the same
+      // spell from more than one of their own classes.
+      classes: new Set(
+        className ? [className] : []
+      )
+    });
+  });
+
+  return [...merged.values()].map(
+    spell => ({
+      ...spell,
+      classes: [...spell.classes].sort()
+    })
+  );
+}
+
+// Each feat as { name, tags }. The tags come from the feat's
+// definition.categories (e.g. "Origin", "General", and internal
+// ones like "__DISGUISE_FEAT") and let the tracker order, label
+// and hide feats without hard-coding every name.
+function buildFeatDetails(
+  character
+) {
+  return (
+    Array.isArray(character.feats)
+      ? character.feats
+      : []
+  )
+    .map(feat => ({
+      name: String(
+        feat?.definition?.name ||
+        feat?.name ||
+        ""
+      ).trim(),
+
+      tags: (
+        Array.isArray(
+          feat?.definition
+            ?.categories
+        )
+          ? feat.definition.categories
+          : []
+      )
+        .map(category =>
+          String(
+            category?.tagName || ""
+          ).trim()
+        )
+        .filter(Boolean)
+    }))
+    .filter(feat => feat.name);
+}
+
+// "Fighter 11", or "Wizard 10 / Cleric 1" for a multiclass
+// character, in character.classes' order. A class with no name
+// (shouldn't normally happen) is skipped rather than shown as
+// "Unknown 11".
+function buildClassAndLevelLabel(
+  classes
+) {
+  return (
+    Array.isArray(classes)
+      ? classes
+      : []
+  )
+    .map(characterClass => {
+      const name = String(
+        characterClass?.definition
+          ?.name || ""
+      ).trim();
+
+      const level = Number(
+        characterClass?.level
+      );
+
+      return name &&
+        Number.isFinite(level)
+        ? `${name} ${level}`
+        : "";
+    })
+    .filter(Boolean)
+    .join(" / ");
+}
+
+// "Human", "Leonin", "Hill Dwarf" (subrace name folded in by D&D
+// Beyond itself) — race.fullName already accounts for subraces, so
+// it's used directly rather than assembling base + subrace by hand.
+// baseName is only a fallback for the rare shape where fullName is
+// missing.
+function buildSpeciesLabel(race) {
+  return String(
+    race?.fullName ||
+    race?.baseName ||
+    ""
+  ).trim();
+}
+
+async function fetchCharacterDetails(
+  characterId
+) {
+  const result =
+    await avttDdbCharacterRequest({
+      url:
+        "https://character-service.dndbeyond.com/character/v5/character/" +
+        characterId,
+
+      method: "GET"
+    });
+
+  const character =
+    JSON.parse(result.responseText)
+      ?.data;
+
+  if (!character) {
+    return null;
+  }
+
+  const feats = (
+    character.feats || []
+  )
+    .map(feat =>
+      String(
+        feat?.definition?.name ||
+        feat?.name ||
+        ""
+      ).trim()
+    )
+    .filter(Boolean);
+
+  const attunedItems = (
+    character.inventory || []
+  )
+    .filter(item => item?.isAttuned)
+    .map(item =>
+      String(
+        item?.definition?.name || ""
+      ).trim()
+    )
+    .filter(Boolean);
+
+  const knownSpells =
+    collectKnownSpells(character);
+
+  const slotMaximums =
+    computeSpellSlotMaximums(
+      character.classes
+    );
+
+  return {
+    feats,
+    featDetails:
+      buildFeatDetails(character),
+    attunedItems,
+    knownSpells,
+
+    spellSlots:
+      buildSpellSlotList(
+        slotMaximums.regular,
+        character.spellSlots
+      ),
+
+    pactMagic:
+      buildSpellSlotList(
+        slotMaximums.pact,
+        character.pactMagic
+      ),
+
+    saveModifiers:
+      buildSaveModifierList(
+        character
+      ),
+
+    classAndLevel:
+      buildClassAndLevelLabel(
+        character.classes
+      ),
+
+    species:
+      buildSpeciesLabel(
+        character.race
+      )
+  };
+}
+
+async function refreshAllCharacterDetails() {
+  const characterIds = [
+    ...new Set(
+      (window.pcs || [])
+        .map(pc => pc.characterId)
+        .filter(Boolean)
+    )
+  ];
+
+  // Sequential, not Promise.all — this is hitting D&D Beyond's real
+  // API rather than our own bridge, so there's no reason to burst
+  // several requests at once.
+  for (const characterId of characterIds) {
+    try {
+      const details =
+        await fetchCharacterDetails(
+          characterId
+        );
+
+      if (details) {
+        window.__avttCharacterDetailsCache[
+          characterId
+        ] = details;
+      }
+    } catch (error) {
+      console.warn(
+        "Could not refresh character details for",
+        characterId,
+        error
+      );
+    }
+  }
+}
+
+function startCharacterDetailsRefresh() {
+  const existingInterval =
+    window[
+      AVTT_CHARACTER_DETAILS_INTERVAL_KEY
+    ];
+
+  if (existingInterval) {
+    window.clearInterval(
+      existingInterval
+    );
+  }
+
+  refreshAllCharacterDetails();
+
+  window[
+    AVTT_CHARACTER_DETAILS_INTERVAL_KEY
+  ] = window.setInterval(
+    refreshAllCharacterDetails,
+    AVTT_CHARACTER_DETAILS_REFRESH_MS
+  );
+
+  console.log(
+    "AVTT character-details refresh started."
+  );
+}
+
+startCharacterDetailsRefresh();
 
 
 
@@ -3161,6 +4575,12 @@ const AVTT_HEALTH_VISUALS = {
   hpMeter: {
     healthauratype: "bar",
     enablepercenthpbar: true,
+    disableaura: true,
+    hidehpbar: false
+  },
+  bossMeter: {
+    healthauratype: "boss",
+    enablepercenthpbar: false,
     disableaura: true,
     hidehpbar: false
   },
@@ -7926,13 +9346,16 @@ const AVTT_AOE_STYLES = [
         return;
       }
 
-      if (!AVTT_AOE_STYLES.includes(style)) {
-        console.warn(
-          "createAoe: unsupported style",
-          style
-        );
-
-        return;
+      // Style is not actually a fixed enum in AboveVTT — build_aoe_token_options
+      // normalizes it into a lookup key against whatever custom AOE style
+      // images the DM has configured in AboveVTT's own "Adjust AoE Styles"
+      // window, and falls back to a plain/default-colored shape for anything
+      // unrecognized rather than erroring. AVTT_AOE_STYLES is only the
+      // curated preset list offered in the property inspector dropdown and
+      // the live promptForStyle picker — it must not gate custom names typed
+      // directly into a button's settings.
+      if (!style) {
+        style = "DEFAULT";
       }
 
       const aoeName =
