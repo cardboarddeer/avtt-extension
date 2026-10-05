@@ -727,6 +727,38 @@ function tokenToState(
           pcData?.characterId
         ]?.species || "",
 
+    classFeatureDetails:
+      window
+        .__avttCharacterDetailsCache?.[
+          pcData?.characterId
+        ]?.classFeatureDetails || [],
+
+    classFeatureSubtitle:
+      window
+        .__avttCharacterDetailsCache?.[
+          pcData?.characterId
+        ]?.classFeatureSubtitle || "",
+
+    speciesTraitDetails:
+      window
+        .__avttCharacterDetailsCache?.[
+          pcData?.characterId
+        ]?.speciesTraitDetails || [],
+
+    backgroundDetails:
+      window
+        .__avttCharacterDetailsCache?.[
+          pcData?.characterId
+        ]?.backgroundDetails || null,
+
+    // Already fully computed by AboveVTT itself on the fast
+    // per-second path — no extraction needed, unlike everything
+    // above this that comes from the slow ~45s character fetch.
+    skills:
+      Array.isArray(pcData?.skills)
+        ? pcData.skills
+        : [],
+
     abilities:
       overriddenAbilities,
 
@@ -2693,8 +2725,10 @@ function formatSpellComponents(
 // are under character.spells.{race,feat,background} (and
 // character.spells.class). The same spell can show up more than
 // once (e.g. Blade Ward twice under race), so entries are merged by
-// name + level. Spells granted by items (spells.item) are not
-// included yet — they'd need an equipped/attuned check first.
+// name + level. Spells granted by items (spells.item, e.g. Fly from
+// an Instrument of the Bards) are included only while the item is
+// equipped (and attuned, if it needs attunement) — the same rule
+// buildSaveModifierList uses for item modifiers.
 function collectKnownSpells(
   character
 ) {
@@ -2721,6 +2755,41 @@ function collectKnownSpells(
     )
   );
 
+  const inventoryByDefinitionId =
+    new Map(
+      asList(character.inventory).map(
+        item => [
+          item?.definition?.id,
+          item
+        ]
+      )
+    );
+
+  const itemSpells = asList(
+    character.spells?.item
+  ).flatMap(spell => {
+    const item =
+      inventoryByDefinitionId.get(
+        spell?.componentId
+      );
+
+    if (
+      !item?.equipped ||
+      (item.definition?.canAttune &&
+        !item.isAttuned)
+    ) {
+      return [];
+    }
+
+    return [{
+      spell,
+      className: "",
+      itemName: String(
+        item.definition?.name || ""
+      ).trim()
+    }];
+  });
+
   const rawSpells = [
     ...asList(
       character.classSpells
@@ -2743,7 +2812,8 @@ function collectKnownSpells(
     ...asList(character.spells?.feat),
     ...asList(
       character.spells?.background
-    )
+    ),
+    ...itemSpells
   ].map(entry =>
     // The four extra buckets above are bare spell objects, not yet
     // wrapped like the classSpells ones — normalize them here so
@@ -2760,7 +2830,8 @@ function collectKnownSpells(
 
   rawSpells.forEach(({
     spell,
-    className
+    className,
+    itemName
   }) => {
     const name = String(
       spell?.definition?.name || ""
@@ -2804,6 +2875,10 @@ function collectKnownSpells(
         existing.classes.add(
           className
         );
+      }
+
+      if (itemName) {
+        existing.items.add(itemName);
       }
 
       return;
@@ -2877,6 +2952,13 @@ function collectKnownSpells(
       // spell from more than one of their own classes.
       classes: new Set(
         className ? [className] : []
+      ),
+
+      // Which equipped item(s) grant the spell, e.g. ["Mandolin"],
+      // kept apart from classes so the popup never labels an item
+      // as a class.
+      items: new Set(
+        itemName ? [itemName] : []
       )
     });
   });
@@ -2884,7 +2966,8 @@ function collectKnownSpells(
   return [...merged.values()].map(
     spell => ({
       ...spell,
-      classes: [...spell.classes].sort()
+      classes: [...spell.classes].sort(),
+      items: [...spell.items].sort()
     })
   );
 }
@@ -2957,6 +3040,50 @@ function buildClassAndLevelLabel(
     .join(" / ");
 }
 
+// The Class Features box's own subtitle — "Rogue - Arcane Trickster
+// 8", or just "Rogue 8" before a subclass is picked yet. Same
+// per-class "name level" shape as buildClassAndLevelLabel, with the
+// subclass folded in when there is one; a multiclass character gets
+// one of these per class, joined the same "/" way.
+function buildClassFeatureSubtitle(
+  classes
+) {
+  return (
+    Array.isArray(classes)
+      ? classes
+      : []
+  )
+    .map(characterClass => {
+      const name = String(
+        characterClass?.definition
+          ?.name || ""
+      ).trim();
+
+      const subclassName = String(
+        characterClass
+          ?.subclassDefinition
+          ?.name || ""
+      ).trim();
+
+      const level = Number(
+        characterClass?.level
+      );
+
+      if (
+        !name ||
+        !Number.isFinite(level)
+      ) {
+        return "";
+      }
+
+      return subclassName
+        ? `${name} - ${subclassName} ${level}`
+        : `${name} ${level}`;
+    })
+    .filter(Boolean)
+    .join(" / ");
+}
+
 // "Human", "Leonin", "Hill Dwarf" (subrace name folded in by D&D
 // Beyond itself) — race.fullName already accounts for subraces, so
 // it's used directly rather than assembling base + subrace by hand.
@@ -2968,6 +3095,204 @@ function buildSpeciesLabel(race) {
     race?.baseName ||
     ""
   ).trim();
+}
+
+// Every class feature the character actually has, across all of
+// their classes — name + full description, same as feats/racial
+// traits already carry, so the tracker's popup can render this
+// directly without needing to look anything up externally.
+// hideInSheet mirrors D&D Beyond's own "don't show this on the
+// sheet" flag; deduped by name since a feature name can legitimately
+// repeat (e.g. "Ability Score Improvement" from two different
+// classes on a multiclass character) without needing two identical
+// entries in the list.
+function buildClassFeatureDetails(
+  classes
+) {
+  const seen = new Set();
+  const details = [];
+
+  (Array.isArray(classes)
+    ? classes
+    : []
+  ).forEach(characterClass => {
+    // classFeatures lists the class's ENTIRE progression up to 20th
+    // level up front, not just what's currently unlocked — each
+    // feature's own definition.requiredLevel is what actually gates
+    // it, checked against this class entry's own current level (not
+    // total character level, since a multiclass character has one
+    // level value per class).
+    const classLevel = Number(
+      characterClass?.level
+    ) || 0;
+
+    (Array.isArray(
+      characterClass?.classFeatures
+    )
+      ? characterClass.classFeatures
+      : []
+    ).forEach(feature => {
+      const definition =
+        feature?.definition || {};
+
+      const name = String(
+        definition.name || ""
+      ).trim();
+
+      const requiredLevel =
+        Number(
+          definition.requiredLevel
+        ) || 0;
+
+      if (
+        !name ||
+        definition.hideInSheet ||
+        seen.has(name) ||
+        requiredLevel > classLevel
+      ) {
+        return;
+      }
+
+      seen.add(name);
+
+      details.push({
+        name,
+        description: String(
+          definition.description || ""
+        )
+      });
+    });
+  });
+
+  return details;
+}
+
+// Same idea as buildClassFeatureDetails, for the character's
+// species/racial traits instead.
+function buildSpeciesTraitDetails(
+  race
+) {
+  const seen = new Set();
+  const details = [];
+
+  (Array.isArray(race?.racialTraits)
+    ? race.racialTraits
+    : []
+  ).forEach(trait => {
+    const definition =
+      trait?.definition || {};
+
+    const name = String(
+      definition.name || ""
+    ).trim();
+
+    if (
+      !name ||
+      definition.hideInSheet ||
+      seen.has(name)
+    ) {
+      return;
+    }
+
+    seen.add(name);
+
+    details.push({
+      name,
+      description: String(
+        definition.description || ""
+      )
+    });
+  });
+
+  return details;
+}
+
+// The character's own background — name plus a full write-up of its
+// rules (skill/tool proficiencies, equipment, granted feat/feature,
+// and flavor text). D&D Beyond normally bakes all of that into one
+// `description` HTML blob, which is used as-is when present. A
+// background can be homebrew-renamed on the sheet, though (seen
+// live: "Charlatan II" instead of the real "Charlatan"), and in that
+// case `description` is often blank — this rebuilds the same
+// structure from the separate fields D&D Beyond still fills in even
+// then (skillProficienciesDescription, toolProficienciesDescription,
+// equipmentDescription, featureName, shortDescription) instead of
+// falling back to just the short flavor blurb alone.
+function buildBackgroundDetails(
+  background
+) {
+  const definition =
+    background?.definition;
+
+  const name = String(
+    definition?.name || ""
+  ).trim();
+
+  if (!name) {
+    return null;
+  }
+
+  const description = String(
+    definition.description || ""
+  ).trim();
+
+  return {
+    name,
+
+    description:
+      description ||
+      buildBackgroundFallbackDescription(
+        definition
+      )
+  };
+}
+
+function buildBackgroundFallbackDescription(
+  definition
+) {
+  const parts = [];
+
+  if (definition.skillProficienciesDescription) {
+    parts.push(
+      `<p><strong>Skill Proficiencies:</strong> ${definition.skillProficienciesDescription}</p>`
+    );
+  }
+
+  if (definition.toolProficienciesDescription) {
+    parts.push(
+      `<p><strong>Tool Proficiencies:</strong> ${definition.toolProficienciesDescription}</p>`
+    );
+  }
+
+  if (definition.languagesDescription) {
+    parts.push(
+      `<p><strong>Languages:</strong> ${definition.languagesDescription}</p>`
+    );
+  }
+
+  if (definition.equipmentDescription) {
+    parts.push(
+      `<p><strong>Equipment:</strong> ${definition.equipmentDescription}</p>`
+    );
+  }
+
+  if (definition.featureName) {
+    const label = definition.featureIsFeat
+      ? "Feat"
+      : "Feature";
+
+    parts.push(
+      `<p><strong>${label}:</strong> ${definition.featureName}</p>`
+    );
+  }
+
+  if (definition.shortDescription) {
+    parts.push(
+      String(definition.shortDescription)
+    );
+  }
+
+  return parts.join("");
 }
 
 async function fetchCharacterDetails(
@@ -3053,6 +3378,26 @@ async function fetchCharacterDetails(
     species:
       buildSpeciesLabel(
         character.race
+      ),
+
+    classFeatureDetails:
+      buildClassFeatureDetails(
+        character.classes
+      ),
+
+    classFeatureSubtitle:
+      buildClassFeatureSubtitle(
+        character.classes
+      ),
+
+    speciesTraitDetails:
+      buildSpeciesTraitDetails(
+        character.race
+      ),
+
+    backgroundDetails:
+      buildBackgroundDetails(
+        character.background
       )
   };
 }
